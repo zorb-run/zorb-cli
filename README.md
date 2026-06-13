@@ -1,1 +1,1 @@
-# zorb-cli
+# zorb
