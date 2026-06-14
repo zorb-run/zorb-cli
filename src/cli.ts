@@ -80,7 +80,11 @@ export async function main(rawArgs: string[]): Promise<number> {
     return 0;
   }
 
-  if (args.envFile) {
+  const wantsHelpOnly =
+    command === 'help' ||
+    (args.help && (command === 'run' || command === 'use' || command === 'list'));
+
+  if (!wantsHelpOnly && args.envFile) {
     try {
       const vars = parseEnvFile(args.envFile);
       applyEnv(vars);
@@ -90,7 +94,7 @@ export async function main(rawArgs: string[]): Promise<number> {
     }
   }
 
-  if (args.env.length > 0) {
+  if (!wantsHelpOnly && args.env.length > 0) {
     try {
       const inline: Record<string, string> = {};
       for (const pair of args.env) {

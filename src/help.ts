@@ -73,6 +73,8 @@ Usage:
 
 Options:
   -f, --file <path>      Use a different workflow file
+      --env-file <path>  Load env vars from a file before running
+  -e, --env KEY=VALUE    Set an env var inline (repeatable)
 
 Prints each task with its description and any required inputs.`;
 

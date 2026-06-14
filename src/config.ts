@@ -271,13 +271,13 @@ function validateWorkflow(ctx: Ctx, root: YAMLMap): Workflow {
 function validateTasks(ctx: Ctx, node: Node): Record<string, Task> {
   const map = requireMap(ctx, node, 'tasks');
   if (map.items.length === 0) fail(ctx, map, `'tasks' must define at least one task`);
-  const out: Record<string, Task> = {};
+  const out: Record<string, Task> = Object.create(null);
   for (const pair of map.items) {
     const { node: keyNode, name } = pairKey(pair);
     if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) {
       fail(ctx, keyNode, `invalid task name '${name}'`, 'task names must start with a letter or underscore and contain only letters, numbers, hyphens, and underscores');
     }
-    if (name in out) fail(ctx, keyNode, `duplicate task '${name}'`);
+    if (Object.hasOwn(out, name)) fail(ctx, keyNode, `duplicate task '${name}'`);
     out[name] = validateTask(ctx, pair.value as Node, name);
   }
   return out;
@@ -313,7 +313,7 @@ function pickInputs(ctx: Ctx, taskMap: YAMLMap, taskName: string): Record<string
   const pair = getPair(taskMap, 'inputs');
   if (!pair) return undefined;
   const map = requireMap(ctx, pair.value as Node, `task '${taskName}'.inputs`);
-  const out: Record<string, Input> = {};
+  const out: Record<string, Input> = Object.create(null);
   for (const inputPair of map.items) {
     const { node: keyNode, name } = pairKey(inputPair);
     out[name] = validateInput(ctx, inputPair.value as Node, `task '${taskName}'.inputs.${name}`, keyNode);
@@ -375,7 +375,7 @@ function validateRunDefaults(ctx: Ctx, node: Node, where: string): RunDefaults {
 
 function validateEnv(ctx: Ctx, node: Node, where: string): EnvMap {
   const map = requireMap(ctx, node, where);
-  const out: EnvMap = {};
+  const out: EnvMap = Object.create(null);
   for (const pair of map.items) {
     const { name } = pairKey(pair);
     out[name] = requireString(ctx, pair.value as Node, `${where}.${name}`);
@@ -470,7 +470,7 @@ function applyStepBase(ctx: Ctx, map: YAMLMap, where: string, target: { id?: str
 
 function validateWith(ctx: Ctx, node: Node, where: string): WithMap {
   const map = requireMap(ctx, node, where);
-  const out: WithMap = {};
+  const out: WithMap = Object.create(null);
   for (const pair of map.items) {
     const { name } = pairKey(pair);
     out[name] = requireWithValue(ctx, pair.value as Node, `${where}.${name}`);

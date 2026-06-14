@@ -38,7 +38,7 @@ export function parseInlineEnv(pair: string): [key: string, value: string] {
 }
 
 export function parseEnvText(text: string, file = '<inline>'): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = Object.create(null);
   const lines = text.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
