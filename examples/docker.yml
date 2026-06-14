@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+# Run a step inside a Docker container by adding `docker:` to a `run:` step.
+#
+# Short form (just the image name) covers the common case:
+#   docker: postgres:16
+#
+# Long form is needed when you want volumes, network, platform, etc.
+#
+# No volumes or files are mounted unless you declare them — host-isolation
+# is the default.
+
+tasks:
+  ping-db:
+    description: Quick command in a container (short form)
+    steps:
+      - name: Wait for Postgres
+        docker: postgres:16
+        env:
+          PGHOST: host.docker.internal
+        run: pg_isready -h "$PGHOST"
+
+  build-isolated:
+    description: Build in an isolated Node container (long form)
+    steps:
+      - name: npm ci + build
+        docker:
+          image: node:20-alpine
+          volumes:
+            - "./src:/app/src"
+            - "./package.json:/app/package.json"
+            - "./package-lock.json:/app/package-lock.json"
+          workdir: /app
+          platform: linux/amd64
+          pull: if-not-present
+        env:
+          NODE_ENV: production
+        run: |
+          npm ci
+          npm run build
+
+  smoke-api:
+    description: Network access via host networking
+    steps:
+      - name: Curl the local API
+        docker:
+          image: curlimages/curl:latest
+          network: host
+        env:
+          CURL_TIMEOUT: "30"
+        run: curl --fail --max-time "$CURL_TIMEOUT" http://localhost:3000/health
