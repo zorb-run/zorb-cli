@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+# `uses:` runs code instead of a shell command. Three resolution styles:
+#
+#   1. ./path/to/file.action     — local file (.js, .ts, .py, ...)
+#   2. @scope/package/action     — NPM package action
+#   3. ./other/zorb.taskname     — task in another zorb.yml ("cross-file")
+#
+# `with:` passes inputs. Values support ${{ }} expressions.
+# Step outputs are produced by the action's return value and consumed via
+# ${{ steps.<id>.outputs.<key> }} in later `with:` / `env:` blocks. To use
+# an output in `run:`, map it through env: first.
+
+tasks:
+  release:
+    description: Tag a version, build, and ship the result
+    inputs:
+      version:
+        description: Semantic version to release
+        type: string
+        required: true
+    steps:
+      - id: tag
+        name: Create git tag
+        uses: ./scripts/tag.action
+        with:
+          version: ${{ inputs.version }}
+
+      - name: Build the project
+        uses: ./zorb.build
+
+      - id: bundle
+        name: Bundle artefacts
+        uses: ./scripts/bundle.action
+        with:
+          version: ${{ inputs.version }}
+          tag: ${{ steps.tag.outputs.tag }}
+
+      - name: Upload to S3
+        uses: '@zorb/aws/s3/sync'
+        with:
+          bucket: releases
+          source: ./dist
+          prefix: ${{ steps.bundle.outputs.path }}
+
+  # Referenced via `uses: ./zorb.build` above.
+  build:
+    description: Build the project (shared task)
+    steps:
+      - run: npm run build
+
+  # Cross-file: ./infra/zorb.yml could define a `plan` task that this calls.
+  deploy-infra:
+    description: Run plan + apply from a sibling workflow
+    steps:
+      - uses: ./infra/zorb.plan
+        with:
+          workspace: production
+      - uses: ./infra/zorb.apply
+        with:
+          workspace: production
+          auto-approve: true

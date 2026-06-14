@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+# Tasks with typed inputs and defaults.
+#
+# Pass values on the CLI:
+#   zorb run deploy --with environment=staging --with dry-run=true
+#
+# ${{ }} expressions are resolved in `with:` and `env:` values — never in
+# `run:` strings. To use an input in a shell command, map it to an env var
+# at the workflow, task, or step level and read it natively.
+
+tasks:
+  deploy:
+    description: Deploy to a target environment
+    inputs:
+      environment:
+        description: Target environment (staging, production, ...)
+        type: string
+        required: true
+      dry-run:
+        description: If true, print the plan but don't apply it
+        type: boolean
+        default: false
+      replicas:
+        description: Number of replicas to scale to
+        type: number
+        default: 1
+    env:
+      TARGET: ${{ inputs.environment }}
+      # Quote ${{ }} values that contain ':' so YAML doesn't read them as a
+      # nested mapping.
+      MODE: "${{ inputs.dry-run == true ? 'dry-run' : 'apply' }}"
+      COUNT: ${{ inputs.replicas }}
+    steps:
+      - name: Plan
+        run: |
+          echo "Target:   $TARGET"
+          echo "Mode:     $MODE"
+          echo "Replicas: $COUNT"
+
+  greet:
+    description: Demonstrates a string input with a default
+    inputs:
+      name:
+        type: string
+        default: world
+    env:
+      NAME: ${{ inputs.name }}
+    steps:
+      - run: echo "Hello, $NAME!"
