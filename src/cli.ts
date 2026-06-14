@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
+import { runList } from './commands/list.ts';
+import { WorkflowError } from './config.ts';
 import { applyEnv, EnvFileError, parseEnvFile } from './envfile.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
@@ -140,12 +142,32 @@ export async function main(rawArgs: string[]): Promise<number> {
       return 0;
     }
 
+    case 'list': {
+      if (args.help) {
+        console.log(COMMAND_HELP.list);
+        return 0;
+      }
+      try {
+        return runList({ log, colors, file: args.file });
+      } catch (e) {
+        return handleWorkflowError(e, log);
+      }
+    }
+
     default: {
       log.error(`unknown command: ${command}`);
       log.hint(`Run '${colors.bold('zorb help')}' for usage.`);
       return 1;
     }
   }
+}
+
+function handleWorkflowError(e: unknown, log: Logger): number {
+  if (e instanceof WorkflowError) {
+    log.error(e.format());
+    return 1;
+  }
+  throw e;
 }
 
 function handleEnvFileError(e: unknown, log: Logger): number {

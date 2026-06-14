@@ -6,6 +6,7 @@ Usage:
 Commands:
   run <task>         Run a task from zorb.yml
   use <action>       Run an action directly, no zorb.yml needed
+  list               List tasks defined in zorb.yml
   help [command]     Show help for a command
 
 Global options:
@@ -58,8 +59,19 @@ Examples:
   zorb help run
   zorb help use`;
 
+const HELP_LIST = `zorb list — list tasks defined in zorb.yml
+
+Usage:
+  zorb list [options]
+
+Options:
+  --file <path>          Use a different workflow file
+
+Prints each task with its description and any required inputs.`;
+
 export const COMMAND_HELP: Record<string, string> = {
   run: HELP_RUN,
   use: HELP_USE,
+  list: HELP_LIST,
   help: HELP_HELP,
 };
