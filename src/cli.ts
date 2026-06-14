@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
-import { createLogger, type LogLevel } from './logger.ts';
+import { applyEnv, EnvFileError, parseEnvFile } from './envfile.ts';
+import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
 import { getVersionString } from './version.ts';
 
@@ -76,6 +77,16 @@ export async function main(rawArgs: string[]): Promise<number> {
     return 0;
   }
 
+  if (args.envFile) {
+    try {
+      const vars = parseEnvFile(args.envFile);
+      applyEnv(vars);
+      log.verbose(`loaded ${Object.keys(vars).length} env var(s) from ${args.envFile}`);
+    } catch (e) {
+      return handleEnvFileError(e, log);
+    }
+  }
+
   switch (command) {
     case 'help': {
       const target = rest[0];
@@ -135,6 +146,15 @@ export async function main(rawArgs: string[]): Promise<number> {
       return 1;
     }
   }
+}
+
+function handleEnvFileError(e: unknown, log: Logger): number {
+  if (e instanceof EnvFileError) {
+    const at = e.line !== undefined ? `\n  at ${e.file}:${e.line}` : `\n  at ${e.file}`;
+    log.error(`${e.message}${at}`);
+    return 1;
+  }
+  throw e;
 }
 
 if (import.meta.main) {
