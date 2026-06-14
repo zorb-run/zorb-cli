@@ -17,7 +17,7 @@ curl -fsSL https://bun.com/install | bash
 ## Setup
 
 ```sh
-git clone git@github.com:zorb-run/zorb.git
+git clone git@github.com:zorb-run/zorb-cli.git
 cd zorb-cli
 bun install
 ```
@@ -27,9 +27,9 @@ bun install
 There's no built binary yet. For now, run the source directly:
 
 ```sh
+bun src/cli.ts --version
 bun src/cli.ts --help
 bun src/cli.ts run build
-bun src/cli.ts --version
 ```
 
 The `dev` script is a shortcut:
@@ -40,12 +40,12 @@ bun run dev -- run build
 
 ## Common commands
 
-| Command           | What it does                                |
-| ----------------- | ------------------------------------------- |
-| `bun test`        | Run the test suite (unit + spawned CLI)     |
-| `bun run typecheck` | Type-check with `tsc --noEmit`            |
-| `bun run format`  | Format with Prettier                        |
-| `bun run dev`     | Run the CLI from source                     |
+| Command             | What it does                            |
+| ------------------- | --------------------------------------- |
+| `bun test`          | Run the test suite (unit + spawned CLI) |
+| `bun run typecheck` | Type-check with `tsc --noEmit`          |
+| `bun run format`    | Format with Prettier                    |
+| `bun run dev`       | Run the CLI from source                 |
 
 ## Project layout
 
@@ -62,29 +62,34 @@ test/
   logger.test.ts  # unit tests for the logger
 ```
 
-The layout will grow over time — `src/steps/`, `src/utils/`, and `runners/` arrive alongside the features that need them.
+The layout will grow over time — `src/steps/`, `src/utils/`, and `runners/` arrive alongside the features that need
+them.
 
 ## Coding conventions
 
-- **Keep it simple.** Small functions, clear names, no clever tricks. If something feels over-engineered, it probably is.
+- **Keep it simple.** Small functions, clear names, no clever tricks. If something feels over-engineered, it probably
+  is.
 - **Match the existing style.** Read neighbouring code before adding new patterns.
 - **Prefer `undefined` over `null`**, especially in types.
 - **Use `path.resolve` / `path.join`** for any filesystem paths — Windows support is deferred but not abandoned.
-- **No `${{ }}` expressions inside `run:` strings.** `run:` is passed to the shell unmodified — declare values in `env:` and read them natively.
+- **No `${{ }}` expressions inside `run:` strings.** `run:` is passed to the shell unmodified — declare values in `env:`
+  and read them natively.
 - **Let errors bubble.** Catch only at the CLI boundary. Don't swallow.
 
 ## Output, colours, and verbosity
 
-The logger (`src/logger.ts`) is the only thing that should write to stdout/stderr in the CLI. It bypasses `console.log`/`console.error` because Bun auto-colourises `console.error` under `FORCE_COLOR`, which would defeat `--no-color`.
+The logger (`src/logger.ts`) is the only thing that should write to stdout/stderr in the CLI. It bypasses
+`console.log`/`console.error` because Bun auto-colourises `console.error` under `FORCE_COLOR`, which would defeat
+`--no-color`.
 
 Levels:
 
-| Level     | Flag         | Methods that fire                              |
-| --------- | ------------ | ---------------------------------------------- |
-| `quiet`   | `--quiet`    | `error`                                        |
-| `normal`  | (default)    | `error`, `warn`, `info`, `hint`                |
-| `verbose` | `-v` / `--verbose` | + `verbose`                              |
-| `debug`   | `--debug`    | + `debug`                                      |
+| Level     | Flag               | Methods that fire               |
+| --------- | ------------------ | ------------------------------- |
+| `quiet`   | `--quiet`          | `error`                         |
+| `normal`  | (default)          | `error`, `warn`, `info`, `hint` |
+| `verbose` | `-v` / `--verbose` | + `verbose`                     |
+| `debug`   | `--debug`          | + `debug`                       |
 
 Routing:
 
@@ -96,9 +101,12 @@ Routing:
 Use `bun test`. We have two flavours:
 
 1. **Unit tests** for small modules (`colors`, `logger`) — import directly and inject fake streams.
-2. **Subprocess tests** for the CLI (`test/cli.test.ts`) — spawn `bun src/cli.ts <args>` and assert on stdout/stderr/exit code. The helper sets `NO_COLOR=1` by default so assertions stay readable; opt out per-test for colour-related cases.
+2. **Subprocess tests** for the CLI (`test/cli.test.ts`) — spawn `bun src/cli.ts <args>` and assert on
+   stdout/stderr/exit code. The helper sets `NO_COLOR=1` by default so assertions stay readable; opt out per-test for
+   colour-related cases.
 
-Aim to add a test alongside any new behaviour. If you're adding a command, cover at least: missing-arg error, happy path, `--help`.
+Aim to add a test alongside any new behaviour. If you're adding a command, cover at least: missing-arg error, happy
+path, `--help`.
 
 ## Commit style
 
@@ -111,5 +119,5 @@ Aim to add a test alongside any new behaviour. If you're adding a command, cover
 
 - Branch from `main`. Name branches `feat/<short>`, `fix/<short>`, or `chore/<short>`.
 - Before pushing: `bun run typecheck && bun test && bun run format`.
-- Keep PRs small. If a milestone spans multiple files, split where it makes sense — each commit should leave the tree green.
-
+- Keep PRs small. If a milestone spans multiple files, split where it makes sense — each commit should leave the tree
+  green.
