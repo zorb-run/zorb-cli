@@ -10,8 +10,11 @@ Commands:
   help [command]     Show help for a command
 
 Global options:
-  --file <path>      Use a different workflow file
-  --env-file <path>  Load env vars from a file before running
+  -f, --file <path>  Use a different workflow file
+      --env-file <path>
+                     Load env vars from a file before running
+  -e, --env KEY=VALUE
+                     Set an env var inline (repeatable, overrides --env-file)
   -v, --verbose      Verbose output
       --debug        Debug output
       --quiet        Suppress non-error output
@@ -27,14 +30,16 @@ Usage:
   zorb run <task> [options]
 
 Options:
-  --with <key=value>     Pass inputs to the task (repeatable)
-  --watch <glob>         Re-run the task when files matching the glob change
-  --file <path>          Use a different workflow file
-  --env-file <path>      Load env vars from a file before running
+      --with <key=value>     Pass inputs to the task (repeatable)
+      --watch <glob>         Re-run the task when files matching the glob change
+  -f, --file <path>          Use a different workflow file
+      --env-file <path>      Load env vars from a file before running
+  -e, --env KEY=VALUE        Set an env var inline (repeatable)
 
 Examples:
   zorb run build
-  zorb run deploy --with environment=staging --with dry-run=true`;
+  zorb run deploy --with environment=staging --with dry-run=true
+  zorb run test -e CI=true -e LOG_LEVEL=debug`;
 
 const HELP_USE = `zorb use — run an action directly, no zorb.yml needed
 
@@ -42,12 +47,14 @@ Usage:
   zorb use <action> [options]
 
 Options:
-  --with <key=value>     Pass inputs to the action (repeatable)
-  --file <path>          Use zorb.yml's env/defaults from a different file
+      --with <key=value>     Pass inputs to the action (repeatable)
+  -f, --file <path>          Use zorb.yml's env/defaults from a different file
+      --env-file <path>      Load env vars from a file before running
+  -e, --env KEY=VALUE        Set an env var inline (repeatable)
 
 Examples:
   zorb use ./check.action --with verbose=true
-  zorb use @zorb/aws/s3/sync --with bucket=my-bucket`;
+  zorb use @zorb/aws/s3/sync --with bucket=my-bucket -e AWS_REGION=eu-west-1`;
 
 const HELP_HELP = `zorb help — show help for a command
 
@@ -65,7 +72,7 @@ Usage:
   zorb list [options]
 
 Options:
-  --file <path>          Use a different workflow file
+  -f, --file <path>      Use a different workflow file
 
 Prints each task with its description and any required inputs.`;
 

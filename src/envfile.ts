@@ -25,6 +25,18 @@ export function parseEnvFile(path: string, opts: ParseEnvFileOptions = {}): Reco
   return parseEnvText(text, resolved);
 }
 
+export function parseInlineEnv(pair: string): [key: string, value: string] {
+  const eq = pair.indexOf('=');
+  if (eq < 1) {
+    throw new EnvFileError(`invalid env value (expected KEY=VALUE): ${pair}`, '<argv>');
+  }
+  const key = pair.slice(0, eq).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new EnvFileError(`invalid env var name '${key}'`, '<argv>');
+  }
+  return [key, pair.slice(eq + 1)];
+}
+
 export function parseEnvText(text: string, file = '<inline>'): Record<string, string> {
   const out: Record<string, string> = {};
   const lines = text.split(/\r?\n/);

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyEnv, EnvFileError, parseEnvFile, parseEnvText } from '../src/envfile.ts';
+import { applyEnv, EnvFileError, parseEnvFile, parseEnvText, parseInlineEnv } from '../src/envfile.ts';
 
 describe('parseEnvText', () => {
   test('parses KEY=VALUE pairs', () => {
@@ -74,6 +74,30 @@ describe('parseEnvFile', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(EnvFileError);
     }
+  });
+});
+
+describe('parseInlineEnv', () => {
+  test('splits on the first =', () => {
+    expect(parseInlineEnv('FOO=bar')).toEqual(['FOO', 'bar']);
+    expect(parseInlineEnv('FOO=bar=baz')).toEqual(['FOO', 'bar=baz']);
+  });
+
+  test('allows empty value', () => {
+    expect(parseInlineEnv('FOO=')).toEqual(['FOO', '']);
+  });
+
+  test('rejects pairs without =', () => {
+    expect(() => parseInlineEnv('FOO')).toThrow(EnvFileError);
+  });
+
+  test('rejects pairs with no key', () => {
+    expect(() => parseInlineEnv('=bar')).toThrow(EnvFileError);
+  });
+
+  test('rejects invalid var names', () => {
+    expect(() => parseInlineEnv('1FOO=bar')).toThrow(EnvFileError);
+    expect(() => parseInlineEnv('FOO-BAR=baz')).toThrow(EnvFileError);
   });
 });
 

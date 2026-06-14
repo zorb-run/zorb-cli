@@ -170,3 +170,47 @@ describe('--env-file', () => {
     }
   });
 });
+
+describe('-e / --env inline env vars', () => {
+  test('-e KEY=VALUE is reported at --verbose', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      const { exitCode, stderr } = await runCli(
+        ['run', 'build', '-e', 'ZORB_A=one', '-e', 'ZORB_B=two', '--verbose'],
+        { cwd: dir },
+      );
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('set 2 inline env var(s)');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('--env is the long form', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      const { exitCode, stderr } = await runCli(
+        ['run', 'build', '--env', 'ZORB_X=y', '--verbose'],
+        { cwd: dir },
+      );
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('set 1 inline env var(s)');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('malformed pair errors with usage hint', async () => {
+    const { exitCode, stderr } = await runCli(['list', '-e', 'BAD']);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('invalid env value');
+  });
+
+  test('invalid key errors', async () => {
+    const { exitCode, stderr } = await runCli(['list', '-e', '1BAD=ok']);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('invalid env var name');
+  });
+});
