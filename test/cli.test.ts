@@ -106,12 +106,6 @@ describe('zorb run', () => {
     expect(stderr).toContain('Usage: zorb run <task>');
   });
 
-  test('with a task name prints scaffold message and exits 0', async () => {
-    const { exitCode, stdout } = await runCli(['run', 'build']);
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain('zorb run build');
-  });
-
   test('--help shows command help', async () => {
     const { exitCode, stdout } = await runCli(['run', '--help']);
     expect(exitCode).toBe(0);
@@ -149,25 +143,27 @@ describe('unknown commands', () => {
 });
 
 describe('verbosity flags', () => {
+  // `zorb use` is still a scaffold (execution lands in A11), so it's a
+  // workflow-free way to exercise the verbose/debug log paths.
   test('default level hides debug output', async () => {
-    const { stderr } = await runCli(['run', 'build']);
+    const { stderr } = await runCli(['use', './fake.action']);
     expect(stderr).not.toContain('[debug]');
     expect(stderr).not.toContain('[verbose]');
   });
 
   test('--verbose shows verbose output', async () => {
-    const { stderr } = await runCli(['run', 'build', '--verbose']);
+    const { stderr } = await runCli(['use', './fake.action', '--verbose']);
     expect(stderr).toContain('[verbose]');
     expect(stderr).not.toContain('[debug]');
   });
 
   test('-v is an alias for --verbose', async () => {
-    const { stderr } = await runCli(['run', 'build', '-v']);
+    const { stderr } = await runCli(['use', './fake.action', '-v']);
     expect(stderr).toContain('[verbose]');
   });
 
   test('--debug shows debug and verbose output', async () => {
-    const { stderr } = await runCli(['run', 'build', '--debug']);
+    const { stderr } = await runCli(['use', './fake.action', '--debug']);
     expect(stderr).toContain('[debug]');
   });
 
