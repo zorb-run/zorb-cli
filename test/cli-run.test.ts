@@ -71,15 +71,18 @@ const WORKFLOW = `tasks:
 `;
 
 describe('zorb run', () => {
-  test('runs a simple task and prints the scaffold marker', async () => {
+  test('runs a simple task and executes its steps', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
-      const { exitCode, stdout } = await runCli(['run', 'build'], { cwd: dir });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  greet:\n    description: Say hi\n    steps:\n      - name: Hello\n        run: echo "hi from zorb"\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'greet'], { cwd: dir });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('build');
-      expect(stdout).toContain('Build the project');
-      expect(stdout).toContain('execution arrives in A4');
+      expect(stdout).toContain('greet');
+      expect(stdout).toContain('Step 1/1: Hello');
+      expect(stdout).toContain('hi from zorb');
     } finally {
       cleanup();
     }
@@ -208,19 +211,19 @@ describe('zorb run', () => {
     }
   });
 
-  test('plain ${{ inputs.<name> }} interpolates in task env at --debug', async () => {
+  test('plain ${{ inputs.<name> }} interpolates into task env', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'deploy', '--with', 'environment=prod', '--debug'],
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  show:\n    inputs:\n      environment:\n        type: string\n        required: true\n    env:\n      TARGET: \${{ inputs.environment }}\n    steps:\n      - run: echo "target=$TARGET"\n`,
+      );
+      const { exitCode, stdout } = await runCli(
+        ['run', 'show', '--with', 'environment=prod'],
         { cwd: dir },
       );
       expect(exitCode).toBe(0);
-      // Debug log includes the resolved env map.
-      expect(stderr).toContain('resolved task env');
-      expect(stderr).toContain('TARGET');
-      expect(stderr).toContain('prod');
+      expect(stdout).toContain('target=prod');
     } finally {
       cleanup();
     }

@@ -1,13 +1,10 @@
-import { relative } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
 import { loadWorkflow, type LoadOptions } from '../config.ts';
-import {
-  interpolateMap,
-  interpolateWith,
-  type InterpolationContext,
-} from '../expressions.ts';
+import { interpolateMap, type InterpolationContext } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
+import { executeShellStep } from '../steps/run-shell.ts';
 import { isShellStep, type Input, type Step, type WithValue } from '../types.ts';
 
 export interface RunOptions extends LoadOptions {
@@ -17,7 +14,14 @@ export interface RunOptions extends LoadOptions {
   withPairs: string[];
 }
 
-export function runRun({ log, colors, taskName, file, cwd, withPairs }: RunOptions): number {
+export async function runRun({
+  log,
+  colors,
+  taskName,
+  file,
+  cwd,
+  withPairs,
+}: RunOptions): Promise<number> {
   const { workflow, path } = loadWorkflow({ file, cwd });
 
   const task = workflow.tasks[taskName];
@@ -43,46 +47,66 @@ export function runRun({ log, colors, taskName, file, cwd, withPairs }: RunOptio
 
   log.verbose(`resolved ${Object.keys(inputs).length} input(s)`);
   log.info(formatHeader(taskName, task.description, colors));
-
   printInputs(log, colors, inputs, task.inputs, provided);
-  printSteps(log, colors, task.steps);
 
-  // Interpolation can throw on complex expressions (A5 territory), so only
-  // perform it when --debug actually wants to see the resolved values.
-  // At normal/verbose levels, interpolation is deferred to execution (A4).
-  if (log.level === 'debug') {
-    log.debug('resolved task env:', task.env ? interpolateMap(task.env, ctx) : {});
-    log.debug('resolved steps:', task.steps.map((step) => resolveStep(step, ctx)));
+  // Base env: process env, then workflow env, then task env. Each layer's
+  // ${{ }} values are interpolated against the task's inputs.
+  const baseEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined) baseEnv[k] = v;
+  }
+  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, ctx));
+  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, ctx));
+
+  const defaultCwd = dirname(path);
+  const total = task.steps.length;
+
+  log.debug('base env:', baseEnv);
+
+  for (let i = 0; i < total; i++) {
+    const step = task.steps[i]!;
+    const label = stepLabel(step);
+    log.info(colors.gray(`> Step ${i + 1}/${total}: ${label}`));
+
+    if (!isShellStep(step)) {
+      log.error(`uses: steps are not yet supported`);
+      log.hint(`local + NPM action runners arrive in A8`);
+      log.hint(`step: ${step.uses}`);
+      return 1;
+    }
+
+    const stepEnv = step.env ? interpolateMap(step.env, ctx) : {};
+    const effectiveEnv = { ...baseEnv, ...stepEnv };
+    const stepCwd = step.cwd ? resolvePath(defaultCwd, step.cwd) : defaultCwd;
+
+    log.debug(`  cwd: ${stepCwd}`);
+    if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
+
+    const result = await executeShellStep({
+      run: step.run,
+      env: effectiveEnv,
+      cwd: stepCwd,
+      shell: step.shell,
+    });
+
+    if (result.exitCode !== 0) {
+      log.error(`step ${i + 1}/${total} failed with exit code ${result.exitCode}`);
+      return result.exitCode;
+    }
   }
 
-  log.info('');
-  log.info(
-    colors.dim(`(scaffold) ${task.steps.length} step(s) ready — execution arrives in A4`),
-  );
-  log.info(colors.dim(`  workflow: ${relative(cwd ?? process.cwd(), path)}`));
+  log.verbose(`completed ${total} step(s)`);
   return 0;
 }
 
-interface ResolvedStep {
-  name?: string;
-  id?: string;
-  preview: string;
-  env: Record<string, string>;
-  with?: Record<string, WithValue>;
+function resolvePath(base: string, p: string): string {
+  return isAbsolute(p) ? p : resolve(base, p);
 }
 
-function resolveStep(step: Step, ctx: InterpolationContext): ResolvedStep {
-  const env = step.env ? interpolateMap(step.env, ctx) : {};
-  if (isShellStep(step)) {
-    return { name: step.name, id: step.id, preview: oneLine(step.run), env };
-  }
-  return {
-    name: step.name,
-    id: step.id,
-    preview: step.uses,
-    env,
-    with: step.with ? interpolateWith(step.with, ctx) : undefined,
-  };
+function stepLabel(step: Step): string {
+  if (step.name) return step.name;
+  if (step.id) return step.id;
+  return isShellStep(step) ? oneLine(step.run) : step.uses;
 }
 
 function oneLine(text: string): string {
@@ -113,18 +137,6 @@ function printInputs(
         ? colors.gray('(default)')
         : colors.gray('(unknown)');
     log.info(`    ${colors.yellow(name.padEnd(width))} = ${formatValue(resolved[name]!)}  ${tag}`);
-  }
-}
-
-function printSteps(log: Logger, colors: Colors, steps: Step[]): void {
-  if (log.level === 'normal' || log.level === 'quiet') return;
-  log.info(`  ${colors.bold('Steps')} (${steps.length}):`);
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]!;
-    const preview = isShellStep(step) ? oneLine(step.run) : step.uses;
-    const label = step.name ?? step.id ?? preview;
-    const suffix = step.name && preview !== step.name ? colors.dim(` — ${preview}`) : '';
-    log.info(`    ${i + 1}. ${label}${suffix}`);
   }
 }
 

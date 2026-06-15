@@ -89,7 +89,7 @@ describe('zorb list', () => {
   test('walks parent directories to find zorb.yml', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
       const child = join(dir, 'a/b');
       mkdirSync(child, { recursive: true });
       const { exitCode, stdout } = await runCli(['list'], { cwd: child });
@@ -158,7 +158,7 @@ describe('--env-file', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, '.env'), 'ZORB_A=1\nZORB_B=2\n');
-      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
       const { exitCode, stderr } = await runCli(
         ['run', 'build', '--env-file', join(dir, '.env'), '--verbose'],
         { cwd: dir },
@@ -175,7 +175,7 @@ describe('-e / --env inline env vars', () => {
   test('-e KEY=VALUE is reported at --verbose', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
       const { exitCode, stderr } = await runCli(
         ['run', 'build', '-e', 'ZORB_A=one', '-e', 'ZORB_B=two', '--verbose'],
         { cwd: dir },
@@ -190,7 +190,7 @@ describe('-e / --env inline env vars', () => {
   test('--env is the long form', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: x\n`);
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
       const { exitCode, stderr } = await runCli(
         ['run', 'build', '--env', 'ZORB_X=y', '--verbose'],
         { cwd: dir },
