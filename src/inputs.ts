@@ -8,7 +8,7 @@ export class InputError extends Error {
 }
 
 export function parseWithPairs(pairs: string[]): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = Object.create(null);
   for (const pair of pairs) {
     const eq = pair.indexOf('=');
     if (eq < 1) {
@@ -59,7 +59,13 @@ export function resolveInputs({
   provided,
   onWarning,
 }: ResolveOptions): Record<string, WithValue> {
-  const out: Record<string, WithValue> = {};
+  const out: Record<string, WithValue> = Object.create(null);
+
+  for (const name of Object.keys(defs)) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) {
+      throw new InputError(`invalid input name '${name}' in inputs definition for task '${taskName}'`);
+    }
+  }
 
   for (const [name, raw] of Object.entries(provided)) {
     const def = defs[name];
@@ -81,7 +87,20 @@ export function resolveInputs({
   for (const [name, def] of Object.entries(defs)) {
     if (name in out) continue;
     if (def.default !== undefined) {
-      out[name] = def.default;
+      try {
+        if (def.type && def.type !== 'string' && typeof def.default === 'string') {
+          out[name] = coerce(def.default, def.type);
+        } else if (def.type && def.type !== 'string' && typeof def.default !== def.type) {
+          throw new InputError(`default must be a ${def.type}`);
+        } else {
+          out[name] = def.default;
+        }
+      } catch (e) {
+        if (e instanceof InputError) {
+          throw new InputError(`input '${name}' for task '${taskName}': ${e.message}`);
+        }
+        throw e;
+      }
       continue;
     }
     if (def.required) {
