@@ -2,8 +2,11 @@
 import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
 import { runList } from './commands/list.ts';
+import { runRun } from './commands/run.ts';
 import { WorkflowError } from './config.ts';
 import { applyEnv, EnvFileError, parseEnvFile, parseInlineEnv } from './envfile.ts';
+import { ExpressionError } from './expressions.ts';
+import { InputError } from './inputs.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
 import { getVersionString } from './version.ts';
@@ -137,10 +140,17 @@ export async function main(rawArgs: string[]): Promise<number> {
         log.hint(`Run '${colors.bold('zorb help run')}' for details.`);
         return 1;
       }
-      log.debug(`parsed args:`, args);
-      log.verbose(`would run task '${task}' with ${args.with.length} input(s)`);
-      log.info(colors.dim(`(scaffold) zorb run ${task} — execution not yet implemented`));
-      return 0;
+      try {
+        return runRun({
+          log,
+          colors,
+          file: args.file,
+          taskName: task,
+          withPairs: args.with,
+        });
+      } catch (e) {
+        return handleRunError(e, log);
+      }
     }
 
     case 'use': {
@@ -193,6 +203,15 @@ function handleEnvFileError(e: unknown, log: Logger): number {
   if (e instanceof EnvFileError) {
     const at = e.line !== undefined ? `\n  at ${e.file}:${e.line}` : `\n  at ${e.file}`;
     log.error(`${e.message}${at}`);
+    return 1;
+  }
+  throw e;
+}
+
+function handleRunError(e: unknown, log: Logger): number {
+  if (e instanceof WorkflowError) return handleWorkflowError(e, log);
+  if (e instanceof InputError || e instanceof ExpressionError) {
+    log.error(e.message);
     return 1;
   }
   throw e;
