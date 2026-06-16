@@ -102,7 +102,7 @@ function tokenize(src: string): Tok[] {
       continue;
     }
 
-    throw new ExpressionError(`unexpected character '${c}' in expression`);
+    throw new ExpressionError(`unexpected character '${c}' at position ${pos} in expression`);
   }
 
   toks.push({ t: 'EOF', v: '', pos: src.length });
@@ -394,7 +394,46 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-const EXPR_RE = /\$\{\{\s*([\s\S]*?)\s*\}\}/g;
+// Scan text for ${{ ... }} blocks. The regex approach (`/\$\{\{([\s\S]*?)\}\}/g`)
+// would terminate at the first `}}` even inside a string literal (e.g. `${{ '}}' }}`),
+// so we use a manual scanner that skips quoted strings and their escape sequences.
+function scanExpressions(text: string): Array<{ start: number; end: number; body: string }> {
+  const results: Array<{ start: number; end: number; body: string }> = [];
+  let i = 0;
+
+  while (i < text.length) {
+    const si = text.indexOf('${{', i);
+    if (si === -1) break;
+
+    let j = si + 3;
+    let found = false;
+
+    while (j < text.length) {
+      const c = text[j]!;
+
+      if (c === '"' || c === "'") {
+        const q = c;
+        j++;
+        while (j < text.length && text[j] !== q) {
+          if (text[j] === '\\' && j + 1 < text.length) j++; // skip escape
+          j++;
+        }
+        j++; // skip closing quote
+      } else if (c === '}' && text[j + 1] === '}') {
+        results.push({ start: si, end: j + 2, body: text.slice(si + 3, j).trim() });
+        i = j + 2;
+        found = true;
+        break;
+      } else {
+        j++;
+      }
+    }
+
+    if (!found) i = si + 3; // no closing }} found — treat ${{ as literal text
+  }
+
+  return results;
+}
 
 function evalBody(body: string, ctx: InterpolationContext): string {
   const toks = tokenize(body);
@@ -403,7 +442,17 @@ function evalBody(body: string, ctx: InterpolationContext): string {
 }
 
 export function interpolate(text: string, ctx: InterpolationContext): string {
-  return text.replace(EXPR_RE, (_match, body: string) => evalBody(body, ctx));
+  if (!text.includes('${{')) return text;
+  const exprs = scanExpressions(text);
+  if (exprs.length === 0) return text;
+  let result = '';
+  let pos = 0;
+  for (const expr of exprs) {
+    result += text.slice(pos, expr.start);
+    result += evalBody(expr.body, ctx);
+    pos = expr.end;
+  }
+  return result + text.slice(pos);
 }
 
 export function interpolateValue(value: WithValue, ctx: InterpolationContext): WithValue {

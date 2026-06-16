@@ -222,6 +222,16 @@ describe('pipe filters', () => {
 
 // ─── Error cases ─────────────────────────────────────────────────────────────
 
+describe('scanner — }} inside string literals', () => {
+  test('string literal containing }} does not terminate the expression early', () => {
+    expect(interpolate(`\${{ replace(inputs.x, 'a', '}}') }}`, ctx({ x: 'abc' }))).toBe('}}bc');
+  });
+
+  test('${{ without closing }} is treated as literal text', () => {
+    expect(interpolate('no closing ${{ here', ctx({}))).toBe('no closing ${{ here');
+  });
+});
+
 describe('error cases', () => {
   test('unknown function', () => {
     expect(() => interpolate('${{ foo(inputs.x) }}', ctx({ x: 'v' }))).toThrow(ExpressionError);
@@ -247,8 +257,10 @@ describe('error cases', () => {
     expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow('A12');
   });
 
-  test('unterminated string', () => {
-    expect(() => interpolate(`\${{ 'unclosed }}`, ctx({}))).toThrow(ExpressionError);
+  test('unterminated string — scanner treats unclosed ${{ as literal text', () => {
+    // The string literal is never closed, so the scanner can't find a matching }}
+    // and passes the ${{ through as literal text rather than erroring.
+    expect(interpolate(`\${{ 'unclosed }}`, ctx({}))).toBe(`\${{ 'unclosed }}`);
   });
 });
 

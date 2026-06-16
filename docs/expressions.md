@@ -4,7 +4,7 @@ Zorb uses `${{ }}` as a template syntax for injecting dynamic values into workfl
 
 ## Where expressions work
 
-Expressions are supported in `env:` values and `with:` inputs — everywhere you're passing data into a step or configuring the environment for one.
+Expressions are resolved in `env:` values at every scope (workflow, task, and step level). They will also apply to `with:` inputs on `uses:` steps once action execution is available.
 
 ```yml
 tasks:
@@ -14,12 +14,9 @@ tasks:
         type: string
         required: true
     env:
-      TARGET: ${{ inputs.environment }}           # ✓ env: value
+      TARGET: ${{ inputs.environment }}         # ✓ resolved before the step runs
     steps:
-      - uses: ./notify.action
-        with:
-          message: "Deploying to ${{ inputs.environment }}"   # ✓ with: value
-      - run: echo "Deploying to $TARGET"          # ✓ $TARGET — native shell var
+      - run: echo "Deploying to $TARGET"        # ✓ $TARGET — native shell var
 ```
 
 **`run:` strings are never interpolated.** They are passed to the shell verbatim. To use an expression result inside a shell command, map it to an env var first and read it natively:
