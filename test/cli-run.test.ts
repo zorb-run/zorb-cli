@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -334,7 +334,7 @@ tasks:
     const { dir, cleanup } = tmp();
     try {
       const sub = join(dir, 'sub');
-      Bun.spawnSync(['mkdir', '-p', sub]);
+      mkdirSync(sub, { recursive: true });
       writeFileSync(
         join(dir, 'zorb.yml'),
         `tasks:\n  here:\n    steps:\n      - cwd: ./sub\n        run: pwd\n`,
