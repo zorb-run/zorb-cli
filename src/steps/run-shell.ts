@@ -42,7 +42,7 @@ export async function executeShellStep(opts: ShellExecOptions): Promise<ShellExe
   await proc.exited;
 
   return {
-    exitCode: proc.exitCode ?? 0,
+    exitCode: proc.exitCode ?? -1,
     stdout: stdoutText,
     stderr: stderrText,
   };

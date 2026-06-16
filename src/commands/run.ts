@@ -51,7 +51,7 @@ export async function runRun({
 
   // Base env: process env, then workflow env, then task env. Each layer's
   // ${{ }} values are interpolated against the task's inputs.
-  const baseEnv: Record<string, string> = {};
+  const baseEnv: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) baseEnv[k] = v;
   }
@@ -76,7 +76,7 @@ export async function runRun({
     }
 
     const stepEnv = step.env ? interpolateMap(step.env, ctx) : {};
-    const effectiveEnv = { ...baseEnv, ...stepEnv };
+    const effectiveEnv: Record<string, string> = Object.assign(Object.create(null), baseEnv, stepEnv);
     const stepCwd = step.cwd ? resolvePath(defaultCwd, step.cwd) : defaultCwd;
 
     log.debug(`  cwd: ${stepCwd}`);
