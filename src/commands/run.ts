@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
 import { loadWorkflow, type LoadOptions } from '../config.ts';
-import { interpolateMap, type InterpolationContext } from '../expressions.ts';
+import { interpolateMap } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
@@ -43,20 +43,20 @@ export async function runRun({
     provided,
     onWarning: (msg) => log.warn(msg),
   });
-  const ctx: InterpolationContext = { inputs };
 
   log.verbose(`resolved ${Object.keys(inputs).length} input(s)`);
   log.info(formatHeader(taskName, task.description, colors));
   printInputs(log, colors, inputs, task.inputs, provided);
 
-  // Base env: process env, then workflow env, then task env. Each layer's
-  // ${{ }} values are interpolated against the task's inputs.
+  // Base env: process env → workflow env → task env. Each layer is interpolated
+  // against inputs + the env accumulated so far, so earlier layers are visible
+  // to later ones via ${{ env.KEY }}.
   const baseEnv: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) baseEnv[k] = v;
   }
-  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, ctx));
-  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, ctx));
+  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, { inputs, env: { ...baseEnv } }));
+  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, { inputs, env: { ...baseEnv } }));
 
   const defaultCwd = dirname(path);
   const total = task.steps.length;
@@ -75,7 +75,7 @@ export async function runRun({
       return 1;
     }
 
-    const stepEnv = step.env ? interpolateMap(step.env, ctx) : {};
+    const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...baseEnv } }) : {};
     const effectiveEnv: Record<string, string> = Object.assign(Object.create(null), baseEnv, stepEnv);
     const stepCwd = step.cwd ? resolvePath(defaultCwd, step.cwd) : defaultCwd;
 

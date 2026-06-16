@@ -6,18 +6,22 @@ import {
   interpolateValue,
   interpolateWith,
 } from '../src/expressions.ts';
+import type { InterpolationContext } from '../src/expressions.ts';
 
-const ctx = (inputs: Record<string, string | number | boolean>) => ({ inputs });
+const ctx = (
+  inputs: Record<string, string | number | boolean> = {},
+  env: Record<string, string> = {},
+): InterpolationContext => ({ inputs, env });
 
-describe('interpolate', () => {
+// ─── Basic variable resolution ───────────────────────────────────────────────
+
+describe('inputs variables', () => {
   test('substitutes a single inputs.<name>', () => {
     expect(interpolate('${{ inputs.env }}', ctx({ env: 'prod' }))).toBe('prod');
   });
 
   test('substitutes multiple expressions in one string', () => {
-    expect(
-      interpolate('${{ inputs.a }}-${{ inputs.b }}', ctx({ a: 'x', b: 'y' })),
-    ).toBe('x-y');
+    expect(interpolate('${{ inputs.a }}-${{ inputs.b }}', ctx({ a: 'x', b: 'y' }))).toBe('x-y');
   });
 
   test('tolerates missing whitespace', () => {
@@ -44,32 +48,223 @@ describe('interpolate', () => {
   });
 
   test('errors on undefined inputs', () => {
-    try {
-      interpolate('${{ inputs.missing }}', ctx({}));
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ExpressionError);
-      expect((e as ExpressionError).message).toContain('undefined input: missing');
-    }
+    expect(() => interpolate('${{ inputs.missing }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ inputs.missing }}', ctx({}))).toThrow('undefined variable: inputs.missing');
   });
 
-  test('rejects complex expressions with a pointer to A5', () => {
-    try {
-      interpolate(`\${{ inputs.x == 'prod' ? 'a' : 'b' }}`, ctx({ x: 'prod' }));
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ExpressionError);
-      expect((e as ExpressionError).message).toContain('unsupported expression at A3');
-      expect((e as ExpressionError).message).toContain('A5');
-    }
-  });
-
-  test('rejects env. / steps. / secrets. references at A3', () => {
-    expect(() => interpolate('${{ env.FOO }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ secrets.X }}', ctx({}))).toThrow(ExpressionError);
+  test('prototype property names are not valid variables', () => {
+    expect(() => interpolate('${{ inputs.toString }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ inputs.constructor }}', ctx({}))).toThrow(ExpressionError);
   });
 });
+
+describe('env variables', () => {
+  test('substitutes env.<name>', () => {
+    expect(interpolate('${{ env.FOO }}', ctx({}, { FOO: 'bar' }))).toBe('bar');
+  });
+
+  test('errors on undefined env var', () => {
+    expect(() => interpolate('${{ env.MISSING }}', ctx({}, {}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ env.MISSING }}', ctx({}, {}))).toThrow('undefined variable: env.MISSING');
+  });
+});
+
+// ─── Operators ───────────────────────────────────────────────────────────────
+
+describe('equality operators', () => {
+  test('== true when equal', () => {
+    expect(interpolate(`\${{ inputs.env == 'prod' }}`, ctx({ env: 'prod' }))).toBe('true');
+  });
+
+  test('== false when not equal', () => {
+    expect(interpolate(`\${{ inputs.env == 'prod' }}`, ctx({ env: 'staging' }))).toBe('false');
+  });
+
+  test('!= true when not equal', () => {
+    expect(interpolate(`\${{ inputs.env != 'prod' }}`, ctx({ env: 'staging' }))).toBe('true');
+  });
+
+  test('== compares stringified values (boolean vs string)', () => {
+    expect(interpolate(`\${{ inputs.flag == 'true' }}`, ctx({ flag: true }))).toBe('true');
+  });
+
+  test('== compares numbers as strings', () => {
+    expect(interpolate(`\${{ inputs.n == 3 }}`, ctx({ n: 3 }))).toBe('true');
+  });
+});
+
+describe('logical operators', () => {
+  test('&& returns right operand when left is truthy', () => {
+    expect(interpolate(`\${{ inputs.a && inputs.b }}`, ctx({ a: 'x', b: 'y' }))).toBe('y');
+  });
+
+  test('&& short-circuits on falsy left', () => {
+    expect(interpolate(`\${{ inputs.a && inputs.b }}`, ctx({ a: false, b: 'y' }))).toBe('false');
+  });
+
+  test('|| returns left when truthy', () => {
+    expect(interpolate(`\${{ inputs.a || inputs.b }}`, ctx({ a: 'x', b: 'y' }))).toBe('x');
+  });
+
+  test('|| returns right when left is falsy', () => {
+    expect(interpolate(`\${{ inputs.a || inputs.b }}`, ctx({ a: '', b: 'fallback' }))).toBe('fallback');
+  });
+
+  test('! negates a boolean input', () => {
+    expect(interpolate(`\${{ !inputs.dry-run }}`, ctx({ 'dry-run': false }))).toBe('true');
+    expect(interpolate(`\${{ !inputs.dry-run }}`, ctx({ 'dry-run': true }))).toBe('false');
+  });
+
+  test('!! double-negation', () => {
+    expect(interpolate(`\${{ !!inputs.x }}`, ctx({ x: 'yes' }))).toBe('true');
+    expect(interpolate(`\${{ !!inputs.x }}`, ctx({ x: '' }))).toBe('false');
+  });
+});
+
+// ─── Ternary ─────────────────────────────────────────────────────────────────
+
+describe('ternary', () => {
+  test('returns yes branch when condition is true', () => {
+    expect(interpolate(`\${{ inputs.env == 'prod' ? 'production' : 'staging' }}`, ctx({ env: 'prod' }))).toBe('production');
+  });
+
+  test('returns no branch when condition is false', () => {
+    expect(interpolate(`\${{ inputs.env == 'prod' ? 'production' : 'staging' }}`, ctx({ env: 'dev' }))).toBe('staging');
+  });
+
+  test('ternary with boolean input', () => {
+    expect(interpolate(`\${{ inputs.dry-run ? 'skip' : 'deploy' }}`, ctx({ 'dry-run': true }))).toBe('skip');
+    expect(interpolate(`\${{ inputs.dry-run ? 'skip' : 'deploy' }}`, ctx({ 'dry-run': false }))).toBe('deploy');
+  });
+
+  test('nested ternary is right-associative', () => {
+    // a ? b : c ? d : e  →  a ? b : (c ? d : e)
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'a' }),
+    )).toBe('first');
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'b' }),
+    )).toBe('second');
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'c' }),
+    )).toBe('other');
+  });
+});
+
+// ─── Built-in functions / filters ────────────────────────────────────────────
+
+describe('functions', () => {
+  test('upper', () => expect(interpolate('${{ upper(inputs.x) }}', ctx({ x: 'hello' }))).toBe('HELLO'));
+  test('lower', () => expect(interpolate('${{ lower(inputs.x) }}', ctx({ x: 'HELLO' }))).toBe('hello'));
+  test('trim',  () => expect(interpolate('${{ trim(inputs.x) }}',  ctx({ x: '  hi  ' }))).toBe('hi'));
+  test('length', () => expect(interpolate('${{ length(inputs.x) }}', ctx({ x: 'abc' }))).toBe('3'));
+  test('string', () => expect(interpolate('${{ string(inputs.n) }}', ctx({ n: 42 }))).toBe('42'));
+  test('number', () => expect(interpolate('${{ number(inputs.s) }}', ctx({ s: '7' }))).toBe('7'));
+  test('boolean true values', () => {
+    for (const v of ['true', '1', 'yes']) {
+      expect(interpolate('${{ boolean(inputs.v) }}', ctx({ v }))).toBe('true');
+    }
+  });
+  test('boolean false values', () => {
+    for (const v of ['false', '0', 'no']) {
+      expect(interpolate('${{ boolean(inputs.v) }}', ctx({ v }))).toBe('false');
+    }
+  });
+  test('default — value present', () => {
+    expect(interpolate(`\${{ default(inputs.x, 'fallback') }}`, ctx({ x: 'actual' }))).toBe('actual');
+  });
+  test('default — value absent/empty', () => {
+    expect(interpolate(`\${{ default(inputs.x, 'fallback') }}`, ctx({ x: '' }))).toBe('fallback');
+  });
+  test('default — fallback is lazy (not evaluated when value is present)', () => {
+    // inputs.missing is not defined, but should not throw because inputs.x is set
+    expect(interpolate(`\${{ default(inputs.x, inputs.missing) }}`, ctx({ x: 'actual' }))).toBe('actual');
+  });
+  test('replace', () => {
+    expect(interpolate(`\${{ replace(inputs.x, 'a', 'b') }}`, ctx({ x: 'banana' }))).toBe('bbnbnb');
+  });
+  test('contains true', () => {
+    expect(interpolate(`\${{ contains(inputs.x, 'ell') }}`, ctx({ x: 'hello' }))).toBe('true');
+  });
+  test('contains false', () => {
+    expect(interpolate(`\${{ contains(inputs.x, 'xyz') }}`, ctx({ x: 'hello' }))).toBe('false');
+  });
+  test('startsWith', () => {
+    expect(interpolate(`\${{ startsWith(inputs.x, 'he') }}`, ctx({ x: 'hello' }))).toBe('true');
+  });
+  test('endsWith', () => {
+    expect(interpolate(`\${{ endsWith(inputs.x, 'lo') }}`, ctx({ x: 'hello' }))).toBe('true');
+  });
+});
+
+// ─── Pipe-filter syntax ───────────────────────────────────────────────────────
+
+describe('pipe filters', () => {
+  test('single filter: x | trim', () => {
+    expect(interpolate('${{ inputs.x | trim }}', ctx({ x: '  hi  ' }))).toBe('hi');
+  });
+
+  test('chained filters: x | trim | upper', () => {
+    expect(interpolate('${{ inputs.x | trim | upper }}', ctx({ x: '  hello  ' }))).toBe('HELLO');
+  });
+
+  test('filter with args: x | replace(a, b)', () => {
+    expect(interpolate(`\${{ inputs.x | replace('a', 'b') }}`, ctx({ x: 'banana' }))).toBe('bbnbnb');
+  });
+
+  test('filter chain with args', () => {
+    expect(interpolate(`\${{ inputs.x | trim | replace('a', '_') }}`, ctx({ x: '  cat  ' }))).toBe('c_t');
+  });
+});
+
+// ─── Error cases ─────────────────────────────────────────────────────────────
+
+describe('scanner — }} inside string literals', () => {
+  test('string literal containing }} does not terminate the expression early', () => {
+    expect(interpolate(`\${{ replace(inputs.x, 'a', '}}') }}`, ctx({ x: 'abc' }))).toBe('}}bc');
+  });
+
+  test('${{ without closing }} is treated as literal text', () => {
+    expect(interpolate('no closing ${{ here', ctx({}))).toBe('no closing ${{ here');
+  });
+});
+
+describe('error cases', () => {
+  test('unknown function', () => {
+    expect(() => interpolate('${{ foo(inputs.x) }}', ctx({ x: 'v' }))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ foo(inputs.x) }}', ctx({ x: 'v' }))).toThrow("unknown function 'foo'");
+  });
+
+  test('bare identifier errors with hint', () => {
+    expect(() => interpolate('${{ foo }}', ctx({}))).toThrow(ExpressionError);
+  });
+
+  test('unknown namespace errors', () => {
+    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow("unknown variable namespace 'foo'");
+  });
+
+  test('secrets references error with coming-in-A6 hint', () => {
+    expect(() => interpolate('${{ secrets.X }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ secrets.X }}', ctx({}))).toThrow('A6');
+  });
+
+  test('step output references error with coming-in-A12 hint', () => {
+    expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow('A12');
+  });
+
+  test('unterminated string — scanner treats unclosed ${{ as literal text', () => {
+    // The string literal is never closed, so the scanner can't find a matching }}
+    // and passes the ${{ through as literal text rather than erroring.
+    expect(interpolate(`\${{ 'unclosed }}`, ctx({}))).toBe(`\${{ 'unclosed }}`);
+  });
+});
+
+// ─── interpolateValue / interpolateMap / interpolateWith ─────────────────────
 
 describe('interpolateValue', () => {
   test('passes numbers and booleans through unchanged', () => {
