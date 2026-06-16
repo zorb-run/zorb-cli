@@ -229,3 +229,152 @@ describe('zorb run', () => {
     }
   });
 });
+
+describe('zorb run — shell execution', () => {
+  test('runs steps sequentially and streams their output', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  multi:\n    steps:\n      - run: echo first\n      - run: echo second\n      - run: echo third\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'multi'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      const firstIdx = stdout.indexOf('first');
+      const secondIdx = stdout.indexOf('second');
+      const thirdIdx = stdout.indexOf('third');
+      expect(firstIdx).toBeGreaterThan(-1);
+      expect(secondIdx).toBeGreaterThan(firstIdx);
+      expect(thirdIdx).toBeGreaterThan(secondIdx);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('prints a step header before each step', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  named:\n    steps:\n      - name: First\n        run: echo a\n      - name: Second\n        run: echo b\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'named'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('Step 1/2: First');
+      expect(stdout).toContain('Step 2/2: Second');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('stops on the first non-zero exit and propagates it', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  fail:\n    steps:\n      - name: First\n        run: echo first\n      - name: Boom\n        run: exit 17\n      - name: Never\n        run: echo never\n`,
+      );
+      const { exitCode, stdout, stderr } = await runCli(['run', 'fail'], { cwd: dir });
+      expect(exitCode).toBe(17);
+      expect(stdout).toContain('first');
+      expect(stdout).not.toContain('never');
+      expect(stderr).toContain('step 2/3 failed');
+      expect(stderr).toContain('exit code 17');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('step env overrides task env, which overrides workflow env', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const yaml = `env:
+  LAYER: workflow
+tasks:
+  layered:
+    env:
+      LAYER: task
+    steps:
+      - name: task wins
+        run: echo "task=$LAYER"
+      - name: step wins
+        env:
+          LAYER: step
+        run: echo "step=$LAYER"
+`;
+      writeFileSync(join(dir, 'zorb.yml'), yaml);
+      const { exitCode, stdout } = await runCli(['run', 'layered'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('task=task');
+      expect(stdout).toContain('step=step');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('process env passes through to the step', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  showenv:\n    steps:\n      - run: 'echo "from-parent: $ZORB_PARENT_TEST"'\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'showenv'], {
+        cwd: dir,
+        env: { ZORB_PARENT_TEST: 'inherited' },
+      });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('from-parent: inherited');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('step cwd is resolved relative to the workflow file', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const sub = join(dir, 'sub');
+      Bun.spawnSync(['mkdir', '-p', sub]);
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  here:\n    steps:\n      - cwd: ./sub\n        run: pwd\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'here'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('/sub');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('multi-line run: blocks execute as one shell invocation', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  multiline:\n    steps:\n      - run: |\n          FOO=hi\n          echo "$FOO from $FOO"\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'multiline'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('hi from hi');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('uses: steps error with an A8 hint', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  release:\n    steps:\n      - uses: ./scripts/tag.action\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('uses: steps are not yet supported');
+      expect(stderr).toContain('A8');
+    } finally {
+      cleanup();
+    }
+  });
+});
