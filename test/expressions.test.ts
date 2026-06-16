@@ -51,6 +51,11 @@ describe('inputs variables', () => {
     expect(() => interpolate('${{ inputs.missing }}', ctx({}))).toThrow(ExpressionError);
     expect(() => interpolate('${{ inputs.missing }}', ctx({}))).toThrow('undefined variable: inputs.missing');
   });
+
+  test('prototype property names are not valid variables', () => {
+    expect(() => interpolate('${{ inputs.toString }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ inputs.constructor }}', ctx({}))).toThrow(ExpressionError);
+  });
 });
 
 describe('env variables', () => {
@@ -131,6 +136,22 @@ describe('ternary', () => {
     expect(interpolate(`\${{ inputs.dry-run ? 'skip' : 'deploy' }}`, ctx({ 'dry-run': true }))).toBe('skip');
     expect(interpolate(`\${{ inputs.dry-run ? 'skip' : 'deploy' }}`, ctx({ 'dry-run': false }))).toBe('deploy');
   });
+
+  test('nested ternary is right-associative', () => {
+    // a ? b : c ? d : e  →  a ? b : (c ? d : e)
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'a' }),
+    )).toBe('first');
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'b' }),
+    )).toBe('second');
+    expect(interpolate(
+      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
+      ctx({ x: 'c' }),
+    )).toBe('other');
+  });
 });
 
 // ─── Built-in functions / filters ────────────────────────────────────────────
@@ -157,6 +178,10 @@ describe('functions', () => {
   });
   test('default — value absent/empty', () => {
     expect(interpolate(`\${{ default(inputs.x, 'fallback') }}`, ctx({ x: '' }))).toBe('fallback');
+  });
+  test('default — fallback is lazy (not evaluated when value is present)', () => {
+    // inputs.missing is not defined, but should not throw because inputs.x is set
+    expect(interpolate(`\${{ default(inputs.x, inputs.missing) }}`, ctx({ x: 'actual' }))).toBe('actual');
   });
   test('replace', () => {
     expect(interpolate(`\${{ replace(inputs.x, 'a', 'b') }}`, ctx({ x: 'banana' }))).toBe('bbnbnb');

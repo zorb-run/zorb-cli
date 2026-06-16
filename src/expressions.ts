@@ -152,9 +152,9 @@ class Parser {
   private parseTernary(): ExprNode {
     const cond = this.parseOr();
     if (!this.match('QMARK')) return cond;
-    const yes = this.parseOr();
+    const yes = this.parseTernary(); // right-associative: a ? b : c ? d : e → a ? b : (c ? d : e)
     this.expect('COLON');
-    const no = this.parseOr();
+    const no = this.parseTernary();
     return { k: 'ternary', cond, yes, no };
   }
 
@@ -242,7 +242,7 @@ class Parser {
         while (this.peek().t === 'DOT') {
           this.consume();
           const part = this.consume();
-          if (part.t !== 'IDENT') {
+          if (part.t !== 'IDENT' && part.t !== 'BOOL') {
             throw new ExpressionError(`expected identifier after '.', got '${part.v}' at position ${part.pos}`);
           }
           path.push(part.v);
@@ -338,11 +338,11 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
       const [ns, ...parts] = node.path;
       const key = parts.join('.');
       if (ns === 'inputs') {
-        if (!(key in ctx.inputs)) throw new ExpressionError(`undefined variable: inputs.${key}`);
+        if (!Object.hasOwn(ctx.inputs, key)) throw new ExpressionError(`undefined variable: inputs.${key}`);
         return ctx.inputs[key] as ExprValue;
       }
       if (ns === 'env') {
-        if (!(key in ctx.env)) throw new ExpressionError(`undefined variable: env.${key}`);
+        if (!Object.hasOwn(ctx.env, key)) throw new ExpressionError(`undefined variable: env.${key}`);
         return ctx.env[key]!;
       }
       if (ns === 'secrets') {
@@ -355,6 +355,13 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
     }
 
     case 'call': {
+      // default(v, fallback) evaluates the fallback lazily so that
+      // `default(inputs.x, inputs.missing)` doesn't throw when inputs.x is set.
+      if (node.name === 'default') {
+        if (node.args.length !== 2) throw new ExpressionError('default() requires exactly 2 arguments');
+        const v = evaluate(node.args[0]!, ctx);
+        return (v !== undefined && v !== '') ? v : evaluate(node.args[1]!, ctx);
+      }
       const fn = FILTERS.get(node.name);
       if (!fn) {
         const known = [...FILTERS.keys()].join(', ');
