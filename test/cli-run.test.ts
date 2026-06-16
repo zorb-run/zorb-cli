@@ -182,7 +182,7 @@ describe('zorb run', () => {
     }
   });
 
-  test('errors on complex ${{ }} expressions with an A5 pointer', async () => {
+  test('ternary expression resolves in task env', async () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(
@@ -194,18 +194,17 @@ describe('zorb run', () => {
         type: string
         required: true
     env:
-      MODE: "\${{ inputs.env == 'prod' ? 'a' : 'b' }}"
+      MODE: "\${{ inputs.env == 'prod' ? 'production' : 'staging' }}"
     steps:
-      - run: echo hi
+      - run: echo "mode=$MODE"
 `,
       );
-      const { exitCode, stderr } = await runCli(
-        ['run', 'ternary', '--with', 'env=prod', '--debug'],
+      const { exitCode, stdout } = await runCli(
+        ['run', 'ternary', '--with', 'env=prod'],
         { cwd: dir },
       );
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain('unsupported expression at A3');
-      expect(stderr).toContain('A5');
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('mode=production');
     } finally {
       cleanup();
     }
