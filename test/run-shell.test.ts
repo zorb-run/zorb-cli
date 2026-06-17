@@ -134,6 +134,43 @@ echo "still in same shell: $FOO"`,
     }
   });
 
+  test('applies mask function to captured stdout/stderr (pipe mode)', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const result = await executeShellStep({
+        run: 'echo "password is supersecret"; echo "also supersecret" >&2',
+        env: {},
+        cwd: dir,
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+        mask: (t) => t.split('supersecret').join('***'),
+      });
+      expect(result.stdout).toBe('password is ***\n');
+      expect(result.stderr).toBe('also ***\n');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('mask: undefined leaves output unchanged', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const result = await executeShellStep({
+        run: 'echo secret',
+        env: {},
+        cwd: dir,
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+        mask: undefined,
+      });
+      expect(result.stdout).toBe('secret\n');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('does NOT substitute ${{ }} expressions — passes them to the shell verbatim', async () => {
     const { dir, cleanup } = tmp();
     try {

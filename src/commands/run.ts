@@ -1,11 +1,12 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
 import { loadWorkflow, type LoadOptions } from '../config.ts';
+import { RunContext } from '../context.ts';
 import { interpolateMap } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
-import { isShellStep, type Input, type Step, type WithValue } from '../types.ts';
+import { isActionStep, isShellStep, type Input, type Step, type WithValue } from '../types.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -48,6 +49,23 @@ export async function runRun({
   log.info(formatHeader(taskName, task.description, colors));
   printInputs(log, colors, inputs, task.inputs, provided);
 
+  const runCtx = new RunContext();
+
+  // Execute the secrets block sequentially before any task step.
+  const secretsSteps = workflow.secrets ?? [];
+  if (secretsSteps.length > 0) {
+    log.verbose(`executing ${secretsSteps.length} secret(s) step(s)`);
+    for (let i = 0; i < secretsSteps.length; i++) {
+      const step = secretsSteps[i]!;
+      log.info(colors.gray(`> Secret ${i + 1}/${secretsSteps.length}: ${step.uses}`));
+      // Action runners arrive in A8.
+      log.error(`uses: steps are not yet supported`);
+      log.hint(`local + NPM action runners arrive in A8`);
+      log.hint(`step: ${step.uses}`);
+      return 1;
+    }
+  }
+
   // Base env: process env → workflow env → task env. Each layer is interpolated
   // against inputs + the env accumulated so far, so earlier layers are visible
   // to later ones via ${{ env.KEY }}.
@@ -55,8 +73,9 @@ export async function runRun({
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) baseEnv[k] = v;
   }
-  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, { inputs, env: { ...baseEnv } }));
-  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, { inputs, env: { ...baseEnv } }));
+  const secretsSnap = () => runCtx.getSecretsSnapshot();
+  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() }));
+  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() }));
 
   const defaultCwd = dirname(path);
   const total = task.steps.length;
@@ -68,14 +87,19 @@ export async function runRun({
     const label = stepLabel(step);
     log.info(colors.gray(`> Step ${i + 1}/${total}: ${label}`));
 
-    if (!isShellStep(step)) {
+    if (isActionStep(step)) {
       log.error(`uses: steps are not yet supported`);
       log.hint(`local + NPM action runners arrive in A8`);
       log.hint(`step: ${step.uses}`);
       return 1;
     }
 
-    const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...baseEnv } }) : {};
+    // Merge any env registered by previous action steps (no-op until A8).
+    Object.assign(baseEnv, runCtx.getDynamicEnv());
+
+    const stepEnv = step.env
+      ? interpolateMap(step.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() })
+      : {};
     const effectiveEnv: Record<string, string> = Object.assign(Object.create(null), baseEnv, stepEnv);
     const stepCwd = step.cwd ? resolvePath(defaultCwd, step.cwd) : defaultCwd;
 
@@ -87,6 +111,7 @@ export async function runRun({
       env: effectiveEnv,
       cwd: stepCwd,
       shell: step.shell,
+      mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
     });
 
     if (result.exitCode !== 0) {

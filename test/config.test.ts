@@ -201,6 +201,88 @@ tasks:
   });
 });
 
+describe('parseWorkflow — secrets: block', () => {
+  test('workflow without secrets: parses fine (secrets is undefined)', () => {
+    const wf = parseWorkflow(`tasks:\n  b:\n    steps:\n      - run: echo hi`);
+    expect(wf.secrets).toBeUndefined();
+  });
+
+  test('secrets: block with a valid uses: step', () => {
+    const wf = parseWorkflow(`
+secrets:
+  - uses: "@zorb/secrets/load-1password"
+    with:
+      vault: Production
+tasks:
+  b:
+    steps:
+      - run: echo hi
+`);
+    expect(wf.secrets).toHaveLength(1);
+    expect(wf.secrets![0]!.uses).toBe('@zorb/secrets/load-1password');
+    expect(wf.secrets![0]!.with).toEqual({ vault: 'Production' });
+  });
+
+  test('secrets: block with multiple uses: steps', () => {
+    const wf = parseWorkflow(`
+secrets:
+  - uses: "@zorb/secrets/load-1password"
+  - uses: "@zorb/secrets/load-dotenv"
+    with:
+      path: .env.local
+tasks:
+  b:
+    steps:
+      - run: echo hi
+`);
+    expect(wf.secrets).toHaveLength(2);
+  });
+
+  test('secrets: step with run: is rejected', () => {
+    const e = expectError(() =>
+      parseWorkflow(`
+secrets:
+  - run: echo secret
+tasks:
+  b:
+    steps:
+      - run: echo hi
+`),
+    );
+    expect(e.message).toContain("'run:' is not allowed in the 'secrets:' block");
+    expect(e.hint).toContain("uses:");
+  });
+
+  test('secrets: step with docker: is rejected', () => {
+    const e = expectError(() =>
+      parseWorkflow(`
+secrets:
+  - docker: alpine
+    uses: ./action
+tasks:
+  b:
+    steps:
+      - run: echo hi
+`),
+    );
+    expect(e.message).toContain("'docker:' is not allowed in the 'secrets:' block");
+  });
+
+  test('secrets: step missing uses: is rejected', () => {
+    const e = expectError(() =>
+      parseWorkflow(`
+secrets:
+  - name: load
+tasks:
+  b:
+    steps:
+      - run: echo hi
+`),
+    );
+    expect(e.message).toContain("must define 'uses:'");
+  });
+});
+
 describe('WorkflowError.format', () => {
   test('includes file, line, col, and hint', () => {
     const e = new WorkflowError('boom', 'wf.yml', 5, 2, 'try X');
