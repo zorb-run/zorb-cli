@@ -11,7 +11,8 @@ import type { InterpolationContext } from '../src/expressions.ts';
 const ctx = (
   inputs: Record<string, string | number | boolean> = {},
   env: Record<string, string> = {},
-): InterpolationContext => ({ inputs, env });
+  secrets: Record<string, string> = {},
+): InterpolationContext => ({ inputs, env, secrets });
 
 // ─── Basic variable resolution ───────────────────────────────────────────────
 
@@ -244,12 +245,22 @@ describe('error cases', () => {
 
   test('unknown namespace errors', () => {
     expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow("unknown variable namespace 'foo'");
+    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow("unknown variable namespace 'foo' — supported: inputs, env, secrets");
   });
 
-  test('secrets references error with coming-in-A6 hint', () => {
-    expect(() => interpolate('${{ secrets.X }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ secrets.X }}', ctx({}))).toThrow('A6');
+  test('secrets reference resolves from context', () => {
+    expect(interpolate('${{ secrets.TOKEN }}', ctx({}, {}, { TOKEN: 'abc' }))).toBe('abc');
+  });
+
+  test('undefined secret reference errors', () => {
+    expect(() => interpolate('${{ secrets.MISSING }}', ctx())).toThrow(ExpressionError);
+    expect(() => interpolate('${{ secrets.MISSING }}', ctx())).toThrow('undefined secret: secrets.MISSING');
+  });
+
+  test('secrets not in context errors', () => {
+    const noSecrets: InterpolationContext = { inputs: {}, env: {} };
+    expect(() => interpolate('${{ secrets.X }}', noSecrets)).toThrow(ExpressionError);
+    expect(() => interpolate('${{ secrets.X }}', noSecrets)).toThrow('undefined secret: secrets.X');
   });
 
   test('step output references error with coming-in-A12 hint', () => {

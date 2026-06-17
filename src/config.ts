@@ -13,6 +13,7 @@ import {
   type YAMLSeq,
 } from 'yaml';
 import type {
+  ActionStep,
   Defaults,
   Docker,
   EnvMap,
@@ -135,7 +136,7 @@ interface Ctx {
   lineCounter: LineCounter;
 }
 
-const WORKFLOW_KEYS = ['version', 'defaults', 'env', 'tasks'] as const;
+const WORKFLOW_KEYS = ['version', 'defaults', 'env', 'secrets', 'tasks'] as const;
 const TASK_KEYS = ['description', 'inputs', 'defaults', 'env', 'steps'] as const;
 const INPUT_KEYS = ['description', 'type', 'required', 'default'] as const;
 const DEFAULTS_KEYS = ['run'] as const;
@@ -261,11 +262,14 @@ function validateWorkflow(ctx: Ctx, root: YAMLMap): Workflow {
   const envPair = getPair(root, 'env');
   const env = envPair ? validateEnv(ctx, envPair.value as Node, 'env') : undefined;
 
+  const secretsPair = getPair(root, 'secrets');
+  const secrets = secretsPair ? validateSecretsBlock(ctx, secretsPair.value as Node) : undefined;
+
   const tasksPair = getPair(root, 'tasks');
   if (!tasksPair) fail(ctx, root, `missing required key 'tasks'`);
   const tasks = validateTasks(ctx, tasksPair.value as Node);
 
-  return { version, defaults, env, tasks };
+  return { version, defaults, env, secrets, tasks };
 }
 
 function validateTasks(ctx: Ctx, node: Node): Record<string, Task> {
@@ -521,4 +525,37 @@ function validateDocker(ctx: Ctx, node: Node, where: string): Docker | string {
 function validateStringList(ctx: Ctx, node: Node, where: string): string[] {
   const seq = requireSeq(ctx, node, where);
   return seq.items.map((item, i) => requireString(ctx, item as Node, `${where}[${i}]`));
+}
+
+function validateSecretsBlock(ctx: Ctx, node: Node): ActionStep[] {
+  const seq = requireSeq(ctx, node, 'secrets');
+  const steps: ActionStep[] = [];
+  for (let i = 0; i < seq.items.length; i++) {
+    const where = `secrets[${i}]`;
+    const map = requireMap(ctx, seq.items[i] as Node, where);
+
+    const runPair = getPair(map, 'run');
+    if (runPair) {
+      fail(
+        ctx,
+        runPair.key as Node,
+        `${where}: 'run:' is not allowed in the 'secrets:' block — only 'uses:' steps are permitted`,
+        `use 'uses:' to reference a secret-loading action`,
+      );
+    }
+    const dockerPair = getPair(map, 'docker');
+    if (dockerPair) {
+      fail(
+        ctx,
+        dockerPair.key as Node,
+        `${where}: 'docker:' is not allowed in the 'secrets:' block — only 'uses:' steps are permitted`,
+      );
+    }
+
+    checkAllowedKeys(ctx, map, STEP_USES_KEYS, where);
+    const usesPair = getPair(map, 'uses');
+    if (!usesPair) fail(ctx, map, `${where} must define 'uses:'`);
+    steps.push(validateUsesStep(ctx, map, where) as ActionStep);
+  }
+  return steps;
 }

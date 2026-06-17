@@ -72,5 +72,6 @@ export interface Workflow {
   version: number;
   defaults?: Defaults;
   env?: EnvMap;
+  secrets?: ActionStep[];
   tasks: Record<string, Task>;
 }

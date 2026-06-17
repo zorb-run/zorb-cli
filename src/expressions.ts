@@ -10,6 +10,7 @@ export class ExpressionError extends Error {
 export interface InterpolationContext {
   inputs: Record<string, WithValue>;
   env: Record<string, string>;
+  secrets?: Record<string, string>;
 }
 
 // ─── Tokenizer ───────────────────────────────────────────────────────────────
@@ -251,7 +252,7 @@ class Parser {
       }
 
       throw new ExpressionError(
-        `unexpected identifier '${name}' at position ${tok.pos} — did you mean inputs.${name} or env.${name}?`,
+        `unexpected identifier '${name}' at position ${tok.pos} — did you mean inputs.${name}, env.${name}, or secrets.${name}?`,
       );
     }
 
@@ -346,12 +347,15 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
         return ctx.env[key]!;
       }
       if (ns === 'secrets') {
-        throw new ExpressionError(`secrets expressions are not yet supported — coming in A6`);
+        if (!ctx.secrets || !Object.hasOwn(ctx.secrets, key)) {
+          throw new ExpressionError(`undefined secret: secrets.${key}`);
+        }
+        return ctx.secrets[key]!;
       }
       if (ns === 'steps') {
         throw new ExpressionError(`step output expressions are not yet supported — coming in A12`);
       }
-      throw new ExpressionError(`unknown variable namespace '${ns}' — supported: inputs, env`);
+      throw new ExpressionError(`unknown variable namespace '${ns}' — supported: inputs, env, secrets`);
     }
 
     case 'call': {
