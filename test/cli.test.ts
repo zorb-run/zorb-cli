@@ -158,6 +158,7 @@ describe('verbosity flags', () => {
       });
       const stderr = await new Response(proc.stderr).text();
       await proc.exited;
+      expect(proc.exitCode).toBe(0);
       expect(stderr).not.toContain('[debug]');
       expect(stderr).not.toContain('[verbose]');
     } finally {
@@ -177,6 +178,7 @@ describe('verbosity flags', () => {
       });
       const stderr = await new Response(proc.stderr).text();
       await proc.exited;
+      expect(proc.exitCode).toBe(0);
       expect(stderr).toContain('[verbose]');
       expect(stderr).not.toContain('[debug]');
     } finally {
@@ -196,6 +198,7 @@ describe('verbosity flags', () => {
       });
       const stderr = await new Response(proc.stderr).text();
       await proc.exited;
+      expect(proc.exitCode).toBe(0);
       expect(stderr).toContain('[verbose]');
     } finally {
       cleanup();
@@ -214,6 +217,7 @@ describe('verbosity flags', () => {
       });
       const stderr = await new Response(proc.stderr).text();
       await proc.exited;
+      expect(proc.exitCode).toBe(0);
       expect(stderr).toContain('[debug]');
     } finally {
       cleanup();

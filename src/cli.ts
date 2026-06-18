@@ -10,6 +10,7 @@ import { ExpressionError } from './expressions.ts';
 import { InputError } from './inputs.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
+import { ActionRunError } from './steps/run-action.ts';
 import { getVersionString } from './version.ts';
 
 interface ParsedArgs {
@@ -146,7 +147,7 @@ export async function main(rawArgs: string[]): Promise<number> {
         return 1;
       }
       try {
-        return runRun({
+        return await runRun({
           log,
           colors,
           file: args.file,
@@ -172,7 +173,7 @@ export async function main(rawArgs: string[]): Promise<number> {
         return 1;
       }
       try {
-        return runUse({
+        return await runUse({
           log,
           colors,
           file: args.file,
@@ -224,7 +225,7 @@ function handleEnvFileError(e: unknown, log: Logger): number {
 
 function handleRunError(e: unknown, log: Logger): number {
   if (e instanceof WorkflowError) return handleWorkflowError(e, log);
-  if (e instanceof InputError || e instanceof ExpressionError) {
+  if (e instanceof InputError || e instanceof ExpressionError || e instanceof ActionRunError) {
     log.error(e.message);
     return 1;
   }
