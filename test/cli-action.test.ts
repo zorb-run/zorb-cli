@@ -541,6 +541,34 @@ tasks:
     }
   });
 
+  test('uses: resolves an NPM package action via node_modules', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const pkgDir = join(dir, 'node_modules', '@zorb', 'aws');
+      mkdirSync(join(pkgDir, 'dist', 's3'), { recursive: true });
+      writeFileSync(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({ name: '@zorb/aws', exports: { './s3/sync': './dist/s3/sync.js' } }),
+      );
+      writeFileSync(
+        join(pkgDir, 'dist', 's3', 'sync.js'),
+        `module.exports.action = (inputs, ctx) => {
+          ctx.log.info('synced bucket=' + inputs.bucket);
+          return {};
+        };`,
+      );
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  t:\n    steps:\n      - uses: "@zorb/aws/s3/sync"\n        with:\n          bucket: my-bucket\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('synced bucket=my-bucket');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('subsequent setSecret for the same name warns and keeps the first value', async () => {
     const { dir, cleanup } = tmp();
     try {

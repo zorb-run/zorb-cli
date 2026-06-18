@@ -98,27 +98,180 @@ describe('resolveAction — local paths', () => {
   });
 });
 
+describe('resolveAction — npm packages', () => {
+  function writePackage(
+    root: string,
+    name: string,
+    pkgJson: Record<string, unknown>,
+    files: Record<string, string>,
+  ): string {
+    const pkgDir = join(root, 'node_modules', name);
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, ...pkgJson }));
+    for (const [rel, contents] of Object.entries(files)) {
+      const full = join(pkgDir, rel);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, contents);
+    }
+    return pkgDir;
+  }
+
+  test('resolves a scoped package via exports field', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(
+        dir,
+        '@zorb/aws',
+        { exports: { './s3/sync': './dist/s3/sync.js' } },
+        { 'dist/s3/sync.js': 'module.exports.action = () => ({});' },
+      );
+      const r = resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'dist', 's3', 'sync.js'));
+      expect(r.language).toBe('js');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('resolves a scoped package via a conditional exports map', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(
+        dir,
+        '@zorb/aws',
+        { exports: { './s3/sync': { import: './dist/s3/sync.mjs', require: './dist/s3/sync.cjs' } } },
+        { 'dist/s3/sync.cjs': '', 'dist/s3/sync.mjs': '' },
+      );
+      const r = resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'dist', 's3', 'sync.cjs'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('resolves an unscoped package via exports field', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'my-actions', { exports: { './check': './check.js' } }, { 'check.js': '' });
+      const r = resolveAction({ uses: 'my-actions/check', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', 'my-actions', 'check.js'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('without exports field, resolves subpath as a file with extension probing', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'simple-pkg', {}, { 'actions/check.ts': '' });
+      const r = resolveAction({ uses: 'simple-pkg/actions/check', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', 'simple-pkg', 'actions', 'check.ts'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('without subpath, falls back to package.json main', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'entry-pkg', { main: 'lib/index.js' }, { 'lib/index.js': '' });
+      const r = resolveAction({ uses: 'entry-pkg', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', 'entry-pkg', 'lib', 'index.js'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('without subpath, falls back to index.* if no main', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'idx-pkg', {}, { 'index.cjs': '' });
+      const r = resolveAction({ uses: 'idx-pkg', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', 'idx-pkg', 'index.cjs'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('walks up parent directories to find node_modules', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, '@zorb/aws', { exports: { './check': './check.js' } }, { 'check.js': '' });
+      const sub = join(dir, 'sub', 'deeper');
+      mkdirSync(sub, { recursive: true });
+      const r = resolveAction({ uses: '@zorb/aws/check', fromFile: join(sub, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'check.js'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('resolves Python files via .py extension', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'py-pkg', { exports: { './check': './check.py' } }, { 'check.py': '' });
+      const r = resolveAction({ uses: 'py-pkg/check', fromFile: join(dir, 'zorb.yml') });
+      expect(r.language).toBe('py');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('missing @zorb/* package errors with an install hint', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      try {
+        resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain('@zorb/aws');
+        expect(err.message).toContain('node_modules');
+        expect(err.hint).toBe('Run: npm install @zorb/aws');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('missing non-@zorb package errors with a generic hint', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      try {
+        resolveAction({ uses: 'some-pkg/action', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain('some-pkg');
+        expect(err.hint).not.toContain('@zorb');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('exports-gated package errors clearly when subpath is missing', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, '@zorb/aws', { exports: { './s3/sync': './dist/s3/sync.js' } }, { 'dist/s3/sync.js': '' });
+      try {
+        resolveAction({ uses: '@zorb/aws/lambda/deploy', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain('not exported');
+        expect(err.hint).toContain('./lambda/deploy');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('resolveAction — errors', () => {
-  test('rejects NPM specs with an A9 hint', () => {
-    expect(() => resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: '/tmp/zorb.yml' })).toThrow(ResolveError);
-    try {
-      resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: '/tmp/zorb.yml' });
-    } catch (e) {
-      expect(e).toBeInstanceOf(ResolveError);
-      expect((e as ResolveError).hint).toContain('A9');
-    }
-  });
-
-  test('rejects bare names (no leading ./) with an A9 hint', () => {
-    try {
-      resolveAction({ uses: 'some-lib/action', fromFile: '/tmp/zorb.yml' });
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ResolveError);
-      expect((e as ResolveError).hint).toContain('A9');
-    }
-  });
-
   test('rejects cross-file ./zorb.<task> with an A10 hint', () => {
     try {
       resolveAction({ uses: './zorb.build', fromFile: '/tmp/zorb.yml' });
