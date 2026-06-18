@@ -11,6 +11,7 @@ export interface InterpolationContext {
   inputs: Record<string, WithValue>;
   env: Record<string, string>;
   secrets?: Record<string, string>;
+  steps?: Record<string, { outputs: Record<string, unknown> }>;
 }
 
 // ─── Tokenizer ───────────────────────────────────────────────────────────────
@@ -468,9 +469,26 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
         return ctx.secrets[key]!;
       }
       if (ns === 'steps') {
-        throw new ExpressionError(`step output expressions are not yet supported — coming in A12`);
+        // Expected shape: steps.<id>.outputs.<key>
+        if (parts.length !== 3 || parts[1] !== 'outputs') {
+          throw new ExpressionError(
+            `invalid step reference 'steps.${parts.join('.')}' — expected 'steps.<id>.outputs.<key>'`,
+          );
+        }
+        const stepId = parts[0]!;
+        const outputKey = parts[2]!;
+        const step = ctx.steps?.[stepId];
+        if (!step) throw new ExpressionError(`undefined step: steps.${stepId}`);
+        if (!Object.hasOwn(step.outputs, outputKey)) {
+          throw new ExpressionError(`undefined step output: steps.${stepId}.outputs.${outputKey}`);
+        }
+        const v = step.outputs[outputKey];
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v;
+        // Objects / arrays — JSON-encode so they can flow through string env vars.
+        return JSON.stringify(v);
       }
-      throw new ExpressionError(`unknown variable namespace '${ns}' — supported: inputs, env, secrets`);
+      throw new ExpressionError(`unknown variable namespace '${ns}' — supported: inputs, env, secrets, steps`);
     }
 
     case 'call': {

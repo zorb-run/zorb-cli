@@ -237,7 +237,7 @@ describe('error cases', () => {
   test('unknown namespace errors', () => {
     expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(ExpressionError);
     expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(
-      "unknown variable namespace 'foo' — supported: inputs, env, secrets",
+      "unknown variable namespace 'foo' — supported: inputs, env, secrets, steps",
     );
   });
 
@@ -256,9 +256,62 @@ describe('error cases', () => {
     expect(() => interpolate('${{ secrets.X }}', noSecrets)).toThrow('undefined secret: secrets.X');
   });
 
-  test('step output references error with coming-in-A12 hint', () => {
-    expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ steps.x.outputs.y }}', ctx({}))).toThrow('A12');
+  test('steps.<id>.outputs.<key> resolves a step output', () => {
+    const c: InterpolationContext = {
+      inputs: {},
+      env: {},
+      steps: { version: { outputs: { tag: 'v1.2.3' } } },
+    };
+    expect(interpolate('${{ steps.version.outputs.tag }}', c)).toBe('v1.2.3');
+  });
+
+  test('step output references stringify numbers and booleans', () => {
+    const c: InterpolationContext = {
+      inputs: {},
+      env: {},
+      steps: { s: { outputs: { n: 42, b: true } } },
+    };
+    expect(interpolate('${{ steps.s.outputs.n }}', c)).toBe('42');
+    expect(interpolate('${{ steps.s.outputs.b }}', c)).toBe('true');
+  });
+
+  test('step output references JSON-encode objects and arrays', () => {
+    const c: InterpolationContext = {
+      inputs: {},
+      env: {},
+      steps: { s: { outputs: { obj: { a: 1 }, arr: [1, 2] } } },
+    };
+    expect(interpolate('${{ steps.s.outputs.obj }}', c)).toBe('{"a":1}');
+    expect(interpolate('${{ steps.s.outputs.arr }}', c)).toBe('[1,2]');
+  });
+
+  test('undefined step reference errors', () => {
+    expect(() => interpolate('${{ steps.missing.outputs.x }}', ctx({}))).toThrow(ExpressionError);
+    expect(() => interpolate('${{ steps.missing.outputs.x }}', ctx({}))).toThrow('undefined step: steps.missing');
+  });
+
+  test('undefined step output errors', () => {
+    const c: InterpolationContext = {
+      inputs: {},
+      env: {},
+      steps: { s: { outputs: { a: '1' } } },
+    };
+    expect(() => interpolate('${{ steps.s.outputs.missing }}', c)).toThrow(ExpressionError);
+    expect(() => interpolate('${{ steps.s.outputs.missing }}', c)).toThrow(
+      'undefined step output: steps.s.outputs.missing',
+    );
+  });
+
+  test('malformed steps reference errors', () => {
+    const c: InterpolationContext = {
+      inputs: {},
+      env: {},
+      steps: { s: { outputs: { a: '1' } } },
+    };
+    expect(() => interpolate('${{ steps.s.a }}', c)).toThrow(ExpressionError);
+    expect(() => interpolate('${{ steps.s.a }}', c)).toThrow(
+      "invalid step reference 'steps.s.a' — expected 'steps.<id>.outputs.<key>'",
+    );
   });
 
   test('unterminated string — scanner treats unclosed ${{ as literal text', () => {

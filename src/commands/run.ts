@@ -1,11 +1,13 @@
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
 import { loadWorkflow, type LoadOptions, WorkflowError } from '../config.ts';
 import { RunContext } from '../context.ts';
 import { interpolateMap, interpolateWith } from '../expressions.ts';
 import { InputError, parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
-import { executeShellStep } from '../steps/run-shell.ts';
+import { executeShellStep, parseShellOutputs, ShellOutputError } from '../steps/run-shell.ts';
 import { DEFAULT_BINS, executeActionStep } from '../steps/run-action.ts';
 import {
   isActionStep,
@@ -164,6 +166,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
 
   const defaultCwd = dirname(workflowPath);
   const secretsSnap = () => runCtx.getSecretsSnapshot();
+  const stepsSnap = () => runCtx.getStepsSnapshot();
   const total = task.steps.length;
 
   for (let i = 0; i < total; i++) {
@@ -197,14 +200,16 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     const acc: Record<string, string> = Object.assign(Object.create(null), shellEnvBase);
     const layer = (m: EnvMap | undefined) => {
       if (!m) return;
-      Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap() }));
+      Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap(), steps: stepsSnap() }));
     };
     layer(workflow.defaults?.run?.env);
     layer(workflow.env);
     layer(task.defaults?.run?.env);
     layer(task.env);
     Object.assign(acc, runCtx.getDynamicEnv());
-    const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap() }) : {};
+    const stepEnv = step.env
+      ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap(), steps: stepsSnap() })
+      : {};
     const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
 
     const stepShell = step.shell ?? task.defaults?.run?.shell ?? workflow.defaults?.run?.shell;
@@ -214,17 +219,45 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     log.debug(`  cwd: ${stepCwd}`);
     if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
 
-    const result = await executeShellStep({
-      run: step.run,
-      env: effectiveEnv,
-      cwd: stepCwd,
-      shell: stepShell,
-      mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
-    });
+    // Always allocate a $ZORB_OUTPUT file so `echo k=v >> $ZORB_OUTPUT` works
+    // even on steps without an `id:` (mirrors GitHub Actions' $GITHUB_OUTPUT).
+    // Outputs are only registered into the RunContext when an id is present.
+    const outputDir = mkdtempSync(join(tmpdir(), 'zorb-step-'));
+    const outputFile = join(outputDir, 'output');
+    writeFileSync(outputFile, '');
+    effectiveEnv.ZORB_OUTPUT = outputFile;
 
-    if (result.exitCode !== 0) {
-      log.error(`step ${i + 1}/${total} failed with exit code ${result.exitCode}`);
-      return result.exitCode;
+    let result;
+    try {
+      result = await executeShellStep({
+        run: step.run,
+        env: effectiveEnv,
+        cwd: stepCwd,
+        shell: stepShell,
+        mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
+      });
+
+      if (result.exitCode !== 0) {
+        log.error(`step ${i + 1}/${total} failed with exit code ${result.exitCode}`);
+        return result.exitCode;
+      }
+
+      if (step.id) {
+        try {
+          const raw = readFileSync(outputFile, 'utf-8');
+          const outputs = parseShellOutputs(raw);
+          runCtx.setStepOutputs(step.id, outputs);
+          if (Object.keys(outputs).length > 0) log.debug(`  outputs:`, outputs);
+        } catch (e) {
+          if (e instanceof ShellOutputError) {
+            log.error(`step ${i + 1}/${total} produced invalid outputs: ${e.message}`);
+            return 1;
+          }
+          throw e;
+        }
+      }
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
     }
   }
 
@@ -276,6 +309,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
   }
 
   const secretsSnap = runCtx.getSecretsSnapshot();
+  const stepsSnap = runCtx.getStepsSnapshot();
 
   // Action env stack: actionEnvBase → workflow.env → task.env → dynamic → step.env.
   // Notably absent: process.env (the user's shell exports do not leak into actions)
@@ -284,16 +318,18 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
   const acc: Record<string, string> = Object.assign(Object.create(null), actionEnvBase);
   const layer = (m: EnvMap | undefined) => {
     if (!m) return;
-    Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap }));
+    Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap, steps: stepsSnap }));
   };
   layer(workflow.env);
   if (task) layer(task.env);
   Object.assign(acc, runCtx.getDynamicEnv());
-  const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap }) : {};
+  const stepEnv = step.env
+    ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap, steps: stepsSnap })
+    : {};
   const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
 
   const withMap: WithMap = step.with
-    ? interpolateWith(step.with, { inputs, env: effectiveEnv, secrets: secretsSnap })
+    ? interpolateWith(step.with, { inputs, env: effectiveEnv, secrets: secretsSnap, steps: stepsSnap })
     : {};
 
   if (resolved.kind === 'workflow') {

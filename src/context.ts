@@ -33,6 +33,12 @@ export class RunContext {
     return this._stepOutputs.get(stepId);
   }
 
+  getStepsSnapshot(): Record<string, { outputs: Record<string, unknown> }> {
+    const out: Record<string, { outputs: Record<string, unknown> }> = Object.create(null);
+    for (const [id, outputs] of this._stepOutputs) out[id] = { outputs };
+    return out;
+  }
+
   get hasSecrets(): boolean {
     return this._secrets.size > 0;
   }
