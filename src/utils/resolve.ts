@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, parse, resolve as resolvePath } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, parse, resolve as resolvePath } from 'node:path';
 
 export class ResolveError extends Error {
   override readonly name = 'ResolveError';
@@ -32,13 +33,7 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
 
   const isLocal = uses.startsWith('./') || uses.startsWith('../') || isAbsolute(uses);
   if (!isLocal) {
-    if (uses.startsWith('@')) {
-      throw new ResolveError(`cannot resolve NPM package action '${uses}'`, `NPM action resolution arrives in A9`);
-    }
-    throw new ResolveError(
-      `cannot resolve '${uses}' — only local paths (./ or ../) are supported`,
-      `NPM action resolution arrives in A9`,
-    );
+    return resolveNpmAction(uses, fromFile);
   }
 
   // Cross-file workflow refs use a 'zorb' basename: ./zorb.build,
@@ -73,6 +68,67 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
   }
 
   throw new ResolveError(`could not resolve action '${uses}'`, `tried: ${tried.join(', ')}`);
+}
+
+interface NpmSpec {
+  pkg: string;
+  subpath: string | undefined;
+}
+
+// Split `@scope/pkg/sub/path` → { pkg: '@scope/pkg', subpath: 'sub/path' }
+// and `pkg/sub/path` → { pkg: 'pkg', subpath: 'sub/path' }.
+function parseNpmSpec(uses: string): NpmSpec {
+  if (uses.startsWith('@')) {
+    const firstSlash = uses.indexOf('/');
+    if (firstSlash < 0) {
+      throw new ResolveError(`invalid NPM spec '${uses}' — scoped names need a package after the scope`);
+    }
+    const secondSlash = uses.indexOf('/', firstSlash + 1);
+    if (secondSlash < 0) return { pkg: uses, subpath: undefined };
+    return { pkg: uses.slice(0, secondSlash), subpath: uses.slice(secondSlash + 1) };
+  }
+  const firstSlash = uses.indexOf('/');
+  if (firstSlash < 0) return { pkg: uses, subpath: undefined };
+  return { pkg: uses.slice(0, firstSlash), subpath: uses.slice(firstSlash + 1) };
+}
+
+// We fast-fail on a missing package so we can emit a clean install hint;
+// past that, Node's createRequire handles the real resolution (exports,
+// conditions, wildcards) and we just inspect the returned file.
+function resolveNpmAction(uses: string, fromFile: string): ResolvedAction {
+  const spec = parseNpmSpec(uses);
+  const anchor = dirname(fromFile);
+  if (!findPackageDir(spec.pkg, anchor)) throw missingPackageError(spec.pkg);
+
+  // createRequire just needs a path to anchor — the file doesn't need to exist.
+  const userRequire = createRequire(join(anchor, 'noop.js'));
+  let resolved: string;
+  try {
+    resolved = userRequire.resolve(uses);
+  } catch (err) {
+    throw new ResolveError(`could not resolve '${uses}': ${(err as Error).message}`);
+  }
+  const ext = extensionOf(resolved);
+  const language = ext && ACTION_EXTENSIONS.includes(ext) ? languageFor(ext) : 'js';
+  return { path: resolved, language };
+}
+
+function findPackageDir(pkg: string, fromDir: string): string | undefined {
+  let dir = fromDir;
+  while (true) {
+    const candidate = join(dir, 'node_modules', pkg);
+    if (existsAsFile(join(candidate, 'package.json'))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function missingPackageError(pkg: string): ResolveError {
+  const hint = pkg.startsWith('@zorb/')
+    ? `Run: npm install ${pkg.split('/').slice(0, 2).join('/')}`
+    : `did you install it in node_modules?`;
+  return new ResolveError(`could not resolve action package '${pkg}' — not found in node_modules`, hint);
 }
 
 function languageFor(ext: string): ActionLanguage {

@@ -289,7 +289,7 @@ tasks:
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  t:\n    steps:\n      - uses: ./nope.action\n`);
       const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain(`must export an 'action' function`);
+      expect(stderr).toContain(`must export a 'action' function`);
     } finally {
       cleanup();
     }
@@ -536,6 +536,34 @@ tasks:
       const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
       expect(exitCode).not.toBe(0);
       expect(stderr).toContain('zorb-no-such-runtime-xyz');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('uses: resolves an NPM package action via node_modules', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const pkgDir = join(dir, 'node_modules', '@zorb', 'aws');
+      mkdirSync(join(pkgDir, 'dist', 's3'), { recursive: true });
+      writeFileSync(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({ name: '@zorb/aws', exports: { './s3/sync': './dist/s3/sync.js' } }),
+      );
+      writeFileSync(
+        join(pkgDir, 'dist', 's3', 'sync.js'),
+        `module.exports.action = (inputs, ctx) => {
+          ctx.log.info('synced bucket=' + inputs.bucket);
+          return {};
+        };`,
+      );
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  t:\n    steps:\n      - uses: "@zorb/aws/s3/sync"\n        with:\n          bucket: my-bucket\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('synced bucket=my-bucket');
     } finally {
       cleanup();
     }

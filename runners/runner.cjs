@@ -4,7 +4,7 @@
 // zorb action runner — Node.js / Bun.
 //
 // Usage:
-//   runner.cjs <action-file> <input-file> <result-file>
+//   runner.cjs <action-file> <action-fn> <input-file> <result-file>
 //
 // Protocol:
 //   input-file (in):  {"inputs": {...}, "context": {"cwd": "...", "taskName": "..."}}
@@ -19,9 +19,9 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const [, , actionFile, inputFile, resultFile] = process.argv;
-  if (!actionFile || !inputFile || !resultFile) {
-    process.stderr.write('runner.cjs: expected <action-file> <input-file> <result-file>\n');
+  const [, , actionFile, actionFn, inputFile, resultFile] = process.argv;
+  if (!actionFile || !actionFn || !inputFile || !resultFile) {
+    process.stderr.write('runner.cjs: expected <action-file> <action-fn> <input-file> <result-file>\n');
     process.exit(2);
   }
 
@@ -63,9 +63,9 @@ async function main() {
     },
   };
 
-  let actionFn;
+  let fn;
   try {
-    actionFn = await loadAction(actionFile);
+    fn = await loadActionFn(actionFile, actionFn);
   } catch (err) {
     process.stderr.write('failed to load action:\n');
     process.stderr.write(formatErr(err) + '\n');
@@ -74,7 +74,7 @@ async function main() {
 
   let result;
   try {
-    result = await actionFn(inputs, context);
+    result = await fn(inputs, context);
   } catch (err) {
     process.stderr.write(`action ${path.basename(actionFile)} threw:\n`);
     process.stderr.write(formatErr(err) + '\n');
@@ -93,7 +93,7 @@ async function main() {
   process.exit(0);
 }
 
-async function loadAction(file) {
+async function loadActionFn(file, fnName) {
   let mod;
   try {
     mod = await import(pathToFileURL(file).href);
@@ -110,21 +110,25 @@ async function loadAction(file) {
       throw importErr;
     }
   }
-  const fn = pickActionExport(mod);
+  const fn = pickExport(mod, fnName);
   if (typeof fn !== 'function') {
-    throw new Error(`action file must export an 'action' function: ${file}`);
+    throw new Error(`action file must export a '${fnName}' function: ${file}`);
   }
   return fn;
 }
 
-function pickActionExport(mod) {
+function pickExport(mod, fnName) {
   if (!mod) return undefined;
-  if (typeof mod.action === 'function') return mod.action;
-  // ESM default export wrapping a CJS module: { default: { action } }
-  if (mod.default && typeof mod.default.action === 'function') return mod.default.action;
-  // module.exports = function action(inputs, context) {}
-  if (typeof mod === 'function') return mod;
-  if (typeof mod.default === 'function') return mod.default;
+  if (typeof mod[fnName] === 'function') return mod[fnName];
+  // ESM default export wrapping a CJS module: { default: { [fnName] } }
+  if (mod.default && typeof mod.default[fnName] === 'function') return mod.default[fnName];
+  // module.exports = function (inputs, context) {}  — only honoured for the
+  // default 'action' name, since picking up an anonymous default for a named
+  // request would be surprising.
+  if (fnName === 'action') {
+    if (typeof mod === 'function') return mod;
+    if (typeof mod.default === 'function') return mod.default;
+  }
   return undefined;
 }
 

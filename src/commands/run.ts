@@ -237,6 +237,7 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
 
   const result = await executeActionStep({
     resolved,
+    actionFn: 'action',
     inputs: withMap,
     context: { cwd: defaultCwd, taskName, stepId: step.id },
     env: effectiveEnv,

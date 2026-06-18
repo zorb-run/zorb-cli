@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveAction, ResolveError } from '../src/utils/resolve.ts';
 
+// Bun on macOS hands out /var/folders/... but Node's createRequire returns
+// /private/var/folders/... (realpath). Normalise once so the two agree.
 function tmp(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), 'zorb-resolve-'));
+  const raw = mkdtempSync(join(tmpdir(), 'zorb-resolve-'));
+  const dir = realpathSync(raw);
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -50,10 +53,7 @@ describe('resolveAction — local paths', () => {
     try {
       mkdirSync(join(dir, 'scripts'));
       writeFileSync(join(dir, 'scripts', 'tag.action.cjs'), 'module.exports.action = () => ({});');
-      const r = resolveAction({
-        uses: './scripts/tag.action',
-        fromFile: join(dir, 'zorb.yml'),
-      });
+      const r = resolveAction({ uses: './scripts/tag.action', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'scripts', 'tag.action.cjs'));
     } finally {
       cleanup();
@@ -98,27 +98,102 @@ describe('resolveAction — local paths', () => {
   });
 });
 
+describe('resolveAction — npm packages', () => {
+  function writePackage(
+    root: string,
+    name: string,
+    pkgJson: Record<string, unknown>,
+    files: Record<string, string>,
+  ): string {
+    const pkgDir = join(root, 'node_modules', name);
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, ...pkgJson }));
+    for (const [rel, contents] of Object.entries(files)) {
+      const full = join(pkgDir, rel);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, contents);
+    }
+    return pkgDir;
+  }
+
+  test('resolves a scoped package via exports field', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(
+        dir,
+        '@zorb/aws',
+        { exports: { './s3/sync': './dist/s3/sync.js' } },
+        { 'dist/s3/sync.js': 'module.exports.action = () => ({});' },
+      );
+      const r = resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'dist', 's3', 'sync.js'));
+      expect(r.language).toBe('js');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('walks up parent directories to find node_modules', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, '@zorb/aws', { exports: { './check': './check.js' } }, { 'check.js': '' });
+      const sub = join(dir, 'sub', 'deeper');
+      mkdirSync(sub, { recursive: true });
+      const r = resolveAction({ uses: '@zorb/aws/check', fromFile: join(sub, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'check.js'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('language is derived from the resolved file extension', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'py-pkg', { exports: { './check': './check.py' } }, { 'check.py': '' });
+      const r = resolveAction({ uses: 'py-pkg/check', fromFile: join(dir, 'zorb.yml') });
+      expect(r.language).toBe('py');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('missing @zorb/* package errors with an install hint', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      try {
+        resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain('@zorb/aws');
+        expect(err.message).toContain('node_modules');
+        expect(err.hint).toBe('Run: npm install @zorb/aws');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('missing non-@zorb package errors with a generic hint', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      try {
+        resolveAction({ uses: 'some-pkg/action', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain('some-pkg');
+        expect(err.hint).not.toContain('@zorb');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('resolveAction — errors', () => {
-  test('rejects NPM specs with an A9 hint', () => {
-    expect(() => resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: '/tmp/zorb.yml' })).toThrow(ResolveError);
-    try {
-      resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: '/tmp/zorb.yml' });
-    } catch (e) {
-      expect(e).toBeInstanceOf(ResolveError);
-      expect((e as ResolveError).hint).toContain('A9');
-    }
-  });
-
-  test('rejects bare names (no leading ./) with an A9 hint', () => {
-    try {
-      resolveAction({ uses: 'some-lib/action', fromFile: '/tmp/zorb.yml' });
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ResolveError);
-      expect((e as ResolveError).hint).toContain('A9');
-    }
-  });
-
   test('rejects cross-file ./zorb.<task> with an A10 hint', () => {
     try {
       resolveAction({ uses: './zorb.build', fromFile: '/tmp/zorb.yml' });

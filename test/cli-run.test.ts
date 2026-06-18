@@ -533,14 +533,15 @@ tasks:
     }
   });
 
-  test('uses: with an NPM-style spec errors with an A9 hint', async () => {
+  test('uses: with a missing @zorb/* package errors with an install hint', async () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  release:\n    steps:\n      - uses: "@zorb/aws/s3/sync"\n`);
       const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain('@zorb/aws/s3/sync');
-      expect(stderr).toContain('A9');
+      expect(stderr).toContain('@zorb/aws');
+      expect(stderr).toContain('node_modules');
+      expect(stderr).toContain('npm install @zorb/aws');
     } finally {
       cleanup();
     }
