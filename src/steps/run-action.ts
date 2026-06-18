@@ -45,7 +45,11 @@ export async function executeActionStep(opts: ExecuteActionOptions): Promise<Act
   const inputFile = join(dir, 'input.json');
   const resultFile = join(dir, 'result.json');
 
-  writeFileSync(inputFile, JSON.stringify({ inputs: opts.inputs, context: opts.context }));
+  const payload: Record<string, unknown> = { inputs: opts.inputs, context: opts.context };
+  if (opts.resolved.kind === 'package') {
+    payload.package = { anchor: opts.resolved.anchor };
+  }
+  writeFileSync(inputFile, JSON.stringify(payload));
 
   try {
     const cmd = buildRunnerCommand(opts.resolved, opts.bin, inputFile, resultFile);
@@ -97,13 +101,15 @@ function parseResultFile(resultFile: string): ActionResult {
 }
 
 function buildRunnerCommand(resolved: ResolvedAction, bin: string, inputFile: string, resultFile: string): string[] {
-  const runnerScript = join(RUNNERS_DIR, resolved.language === 'py' ? 'runner.py' : 'runner.cjs');
+  const language = resolved.kind === 'package' ? 'js' : resolved.language;
+  const runnerScript = join(RUNNERS_DIR, language === 'py' ? 'runner.py' : 'runner.cjs');
   const argv = renderBinTemplate(bin, runnerScript);
   if (argv.length === 0) {
     throw new ActionRunError(`bin template produced no command: '${bin}'`);
   }
   argv[0] = resolveExecutable(argv[0]!);
-  return [...argv, resolved.path, inputFile, resultFile];
+  const target = resolved.kind === 'package' ? resolved.spec : resolved.path;
+  return [...argv, target, inputFile, resultFile];
 }
 
 // Whitespace-split the template, then substitute {0} = runner script path.

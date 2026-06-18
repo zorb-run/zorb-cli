@@ -18,7 +18,7 @@ import {
   type WithMap,
   type WithValue,
 } from '../types.ts';
-import { resolveAction, ResolveError, type ResolvedAction } from '../utils/resolve.ts';
+import { resolveAction, ResolveError, type ActionLanguage, type ResolvedAction } from '../utils/resolve.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -230,7 +230,11 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
 
   const bin = resolveActionBin(resolved, step, task, workflow);
 
-  log.debug(`  action: ${resolved.path} (${resolved.language})`);
+  if (resolved.kind === 'package') {
+    log.debug(`  action: ${resolved.spec} (package, anchor=${resolved.anchor})`);
+  } else {
+    log.debug(`  action: ${resolved.path} (${resolved.language})`);
+  }
   log.debug(`  bin:    ${bin}`);
   if (Object.keys(withMap).length > 0) log.debug(`  with:`, withMap);
   if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
@@ -271,11 +275,12 @@ function resolveActionBin(
   workflow: { defaults?: { action?: ActionDefaults } },
 ): string {
   if (step.bin) return step.bin;
-  const taskBin = task?.defaults?.action?.[resolved.language]?.bin;
+  const lang: ActionLanguage = resolved.kind === 'package' ? 'js' : resolved.language;
+  const taskBin = task?.defaults?.action?.[lang]?.bin;
   if (taskBin) return taskBin;
-  const wfBin = workflow.defaults?.action?.[resolved.language]?.bin;
+  const wfBin = workflow.defaults?.action?.[lang]?.bin;
   if (wfBin) return wfBin;
-  return DEFAULT_BINS[resolved.language];
+  return DEFAULT_BINS[lang];
 }
 
 function stepLabel(step: Step): string {
