@@ -54,13 +54,14 @@ export function buildDockerArgv(opts: BuildArgvOptions): string[] {
   for (const [k, v] of Object.entries(opts.env)) {
     argv.push('-e', `${k}=${v}`);
   }
-  if (opts.outputMount) {
-    argv.push('-v', `${opts.outputMount.hostPath}:${opts.outputMount.containerPath}`);
-    argv.push('-e', `ZORB_OUTPUT=${opts.outputMount.containerPath}`);
-  }
 
   if (d.volumes) {
     for (const vol of d.volumes) argv.push('-v', vol);
+  }
+
+  if (opts.outputMount) {
+    argv.push('-v', `${opts.outputMount.hostPath}:${opts.outputMount.containerPath}`);
+    argv.push('-e', `ZORB_OUTPUT=${opts.outputMount.containerPath}`);
   }
   if (d.network) argv.push('--network', d.network);
   if (d.workdir) argv.push('--workdir', d.workdir);

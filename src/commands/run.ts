@@ -231,7 +231,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     // Outputs are only registered into the RunContext when an id is present.
     const outputDir = mkdtempSync(join(tmpdir(), 'zorb-step-'));
     const outputFile = join(outputDir, 'output');
-    writeFileSync(outputFile, '');
+    writeFileSync(outputFile, '', { mode: 0o666 });
 
     let result;
     try {
