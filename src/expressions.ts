@@ -470,13 +470,13 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
       }
       if (ns === 'steps') {
         // Expected shape: steps.<id>.outputs.<key>
-        if (parts.length < 3 || parts[1] !== 'outputs') {
+        if (parts.length !== 3 || parts[1] !== 'outputs') {
           throw new ExpressionError(
             `invalid step reference 'steps.${parts.join('.')}' — expected 'steps.<id>.outputs.<key>'`,
           );
         }
         const stepId = parts[0]!;
-        const outputKey = parts.slice(2).join('.');
+        const outputKey = parts[2]!;
         const step = ctx.steps?.[stepId];
         if (!step) throw new ExpressionError(`undefined step: steps.${stepId}`);
         if (!Object.hasOwn(step.outputs, outputKey)) {
