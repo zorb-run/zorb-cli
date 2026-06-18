@@ -11,6 +11,7 @@ zorb list -f examples/<name>.yml
 | [`basic.yml`](./basic.yml)     | Minimal tasks with `run:` steps                |
 | [`inputs.yml`](./inputs.yml)   | Typed inputs (`string`, `boolean`, `number`)   |
 | [`env.yml`](./env.yml)         | `env:` at workflow, task, and step scope       |
+| [`defaults.yml`](./defaults.yml) | `defaults.run.{shell, cwd, env}` precedence  |
 | [`docker.yml`](./docker.yml)   | `docker:` short and long form                  |
 | [`actions.yml`](./actions.yml) | `uses:` for local actions, NPM, and cross-file |
 

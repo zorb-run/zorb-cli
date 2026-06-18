@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+# defaults: sets fallback values for run: steps. It works at two levels —
+# workflow and task — with task overriding workflow. defaults.run.* never
+# applies to uses: steps.
+#
+# Precedence (lowest → highest):
+#   built-in fallback  <  workflow defaults  <  task defaults  <  step value
+#
+# For env vars specifically, defaults are the floor at each scope —
+# explicit env: at the same scope wins:
+#   step env  >  task env  >  task defaults.run.env
+#             >  workflow env  >  workflow defaults.run.env  >  process env
+
+defaults:
+  run:
+    shell: /bin/bash    # every run: step uses bash unless overridden
+    cwd: ./scripts      # every run: step starts in ./scripts
+    env:
+      LOG_LEVEL: info   # floor value; explicit env: blocks override
+
+tasks:
+  build:
+    description: Inherits workflow defaults straight through
+    steps:
+      - run: echo "shell=$0 cwd=$(pwd) log=$LOG_LEVEL"
+
+  test:
+    description: Task-level defaults override workflow-level
+    defaults:
+      run:
+        shell: /bin/sh
+        cwd: ./test
+        env:
+          LOG_LEVEL: debug
+    steps:
+      - run: echo "shell=$0 cwd=$(pwd) log=$LOG_LEVEL"
+
+  release:
+    description: Per-step values override defaults at every scope
+    steps:
+      - name: Use defaults
+        run: echo "default shell=$0"
+
+      - name: Step shell wins
+        shell: /bin/sh
+        run: echo "step shell=$0"
+
+      - name: Step env wins over the env floor
+        env:
+          LOG_LEVEL: warn
+        run: echo "log=$LOG_LEVEL"
