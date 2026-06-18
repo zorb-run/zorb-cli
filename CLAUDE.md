@@ -7,8 +7,8 @@ Project-specific guidance for Claude Code working in this repo. Read alongside t
 `zorb` — a declarative local workflow runner. CLI written in Bun + TypeScript. Reads `zorb.yml` and runs tasks (shell
 commands and code actions). Built as a single binary, distributed via NPM (`zorb`) and eventually Homebrew.
 
-Status: early development. Milestone roadmap lives in `../PLAN.md` (one level up). The A-track (A1 → A18) builds the
-CLI core.
+Status: early development. Milestone roadmap lives in `../PLAN.md` (one level up). The A-track (A1 → A18) builds the CLI
+core.
 
 ## Dev loop
 
@@ -122,8 +122,8 @@ not.
 
 - Base branch: `main`.
 - CI (`.github/workflows/pull-requests.yml`) runs typecheck + tests on every PR. Don't merge red.
-- For external GitHub Actions, pin to a commit SHA with the tag as a comment
-  (`uses: org/action@<sha> # vX.Y.Z`). `actions/*` is trusted and can stay on tags.
+- For external GitHub Actions, pin to a commit SHA with the tag as a comment (`uses: org/action@<sha> # vX.Y.Z`).
+  `actions/*` is trusted and can stay on tags.
 
 ## Out of scope (don't add)
 

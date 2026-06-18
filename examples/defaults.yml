@@ -14,10 +14,10 @@
 
 defaults:
   run:
-    shell: /bin/bash    # every run: step uses bash unless overridden
-    cwd: ./scripts      # every run: step starts in ./scripts
+    shell: /bin/bash # every run: step uses bash unless overridden
+    cwd: ./scripts # every run: step starts in ./scripts
     env:
-      LOG_LEVEL: info   # floor value; explicit env: blocks override
+      LOG_LEVEL: info # floor value; explicit env: blocks override
 
 tasks:
   build:

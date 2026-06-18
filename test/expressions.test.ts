@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  ExpressionError,
-  interpolate,
-  interpolateMap,
-  interpolateValue,
-  interpolateWith,
-} from '../src/expressions.ts';
+import { ExpressionError, interpolate, interpolateMap, interpolateValue, interpolateWith } from '../src/expressions.ts';
 import type { InterpolationContext } from '../src/expressions.ts';
 
 const ctx = (
@@ -30,9 +24,7 @@ describe('inputs variables', () => {
   });
 
   test('keeps the surrounding string', () => {
-    expect(interpolate('host-${{ inputs.env }}.local', ctx({ env: 'staging' }))).toBe(
-      'host-staging.local',
-    );
+    expect(interpolate('host-${{ inputs.env }}.local', ctx({ env: 'staging' }))).toBe('host-staging.local');
   });
 
   test('supports hyphenated input names', () => {
@@ -126,7 +118,9 @@ describe('logical operators', () => {
 
 describe('ternary', () => {
   test('returns yes branch when condition is true', () => {
-    expect(interpolate(`\${{ inputs.env == 'prod' ? 'production' : 'staging' }}`, ctx({ env: 'prod' }))).toBe('production');
+    expect(interpolate(`\${{ inputs.env == 'prod' ? 'production' : 'staging' }}`, ctx({ env: 'prod' }))).toBe(
+      'production',
+    );
   });
 
   test('returns no branch when condition is false', () => {
@@ -140,18 +134,15 @@ describe('ternary', () => {
 
   test('nested ternary is right-associative', () => {
     // a ? b : c ? d : e  →  a ? b : (c ? d : e)
-    expect(interpolate(
-      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
-      ctx({ x: 'a' }),
-    )).toBe('first');
-    expect(interpolate(
-      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
-      ctx({ x: 'b' }),
-    )).toBe('second');
-    expect(interpolate(
-      `\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`,
-      ctx({ x: 'c' }),
-    )).toBe('other');
+    expect(
+      interpolate(`\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`, ctx({ x: 'a' })),
+    ).toBe('first');
+    expect(
+      interpolate(`\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`, ctx({ x: 'b' })),
+    ).toBe('second');
+    expect(
+      interpolate(`\${{ inputs.x == 'a' ? 'first' : inputs.x == 'b' ? 'second' : 'other' }}`, ctx({ x: 'c' })),
+    ).toBe('other');
   });
 });
 
@@ -160,7 +151,7 @@ describe('ternary', () => {
 describe('functions', () => {
   test('upper', () => expect(interpolate('${{ upper(inputs.x) }}', ctx({ x: 'hello' }))).toBe('HELLO'));
   test('lower', () => expect(interpolate('${{ lower(inputs.x) }}', ctx({ x: 'HELLO' }))).toBe('hello'));
-  test('trim',  () => expect(interpolate('${{ trim(inputs.x) }}',  ctx({ x: '  hi  ' }))).toBe('hi'));
+  test('trim', () => expect(interpolate('${{ trim(inputs.x) }}', ctx({ x: '  hi  ' }))).toBe('hi'));
   test('length', () => expect(interpolate('${{ length(inputs.x) }}', ctx({ x: 'abc' }))).toBe('3'));
   test('string', () => expect(interpolate('${{ string(inputs.n) }}', ctx({ n: 42 }))).toBe('42'));
   test('number', () => expect(interpolate('${{ number(inputs.s) }}', ctx({ s: '7' }))).toBe('7'));
@@ -245,7 +236,9 @@ describe('error cases', () => {
 
   test('unknown namespace errors', () => {
     expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(ExpressionError);
-    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow("unknown variable namespace 'foo' — supported: inputs, env, secrets");
+    expect(() => interpolate('${{ foo.bar }}', ctx({}))).toThrow(
+      "unknown variable namespace 'foo' — supported: inputs, env, secrets",
+    );
   });
 
   test('secrets reference resolves from context', () => {
@@ -290,18 +283,12 @@ describe('interpolateValue', () => {
 
 describe('interpolateMap / interpolateWith', () => {
   test('interpolateMap rewrites every value', () => {
-    const out = interpolateMap(
-      { A: '${{ inputs.env }}', B: 'static' },
-      ctx({ env: 'prod' }),
-    );
+    const out = interpolateMap({ A: '${{ inputs.env }}', B: 'static' }, ctx({ env: 'prod' }));
     expect(out).toEqual({ A: 'prod', B: 'static' });
   });
 
   test('interpolateWith preserves non-string values', () => {
-    const out = interpolateWith(
-      { tag: '${{ inputs.env }}', count: 3, dry: false },
-      ctx({ env: 'staging' }),
-    );
+    const out = interpolateWith({ tag: '${{ inputs.env }}', count: 3, dry: false }, ctx({ env: 'staging' }));
     expect(out).toEqual({ tag: 'staging', count: 3, dry: false });
   });
 });

@@ -99,9 +99,9 @@ describe('resolveInputs', () => {
   });
 
   test('errors on missing required input', () => {
-    expect(() =>
-      resolveInputs({ taskName: 'deploy', defs, provided: {} }),
-    ).toThrow(/missing required input 'environment'/);
+    expect(() => resolveInputs({ taskName: 'deploy', defs, provided: {} })).toThrow(
+      /missing required input 'environment'/,
+    );
   });
 
   test('warns on unknown provided inputs and passes them through as strings', () => {

@@ -279,7 +279,12 @@ function validateTasks(ctx: Ctx, node: Node): Record<string, Task> {
   for (const pair of map.items) {
     const { node: keyNode, name } = pairKey(pair);
     if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) {
-      fail(ctx, keyNode, `invalid task name '${name}'`, 'task names must start with a letter or underscore and contain only letters, numbers, hyphens, and underscores');
+      fail(
+        ctx,
+        keyNode,
+        `invalid task name '${name}'`,
+        'task names must start with a letter or underscore and contain only letters, numbers, hyphens, and underscores',
+      );
     }
     if (Object.hasOwn(out, name)) fail(ctx, keyNode, `duplicate task '${name}'`);
     out[name] = validateTask(ctx, pair.value as Node, name);
@@ -417,7 +422,7 @@ function validateStep(ctx: Ctx, node: Node, where: string): Step {
     fail(ctx, map, `${where} must define either 'run' or 'uses'`);
   }
   if (runPair && usesPair) {
-    fail(ctx, usesPair.value as Node ?? map, `${where} cannot define both 'run' and 'uses'`);
+    fail(ctx, (usesPair.value as Node) ?? map, `${where} cannot define both 'run' and 'uses'`);
   }
 
   if (runPair) {
@@ -438,7 +443,8 @@ function validateRunStep(ctx: Ctx, map: YAMLMap, where: string): Step {
   const shell = getPair(map, 'shell');
   if (shell) (out as { shell?: string }).shell = requireString(ctx, shell.value as Node, `${where}.shell`);
   const docker = getPair(map, 'docker');
-  if (docker) (out as { docker?: Docker | string }).docker = validateDocker(ctx, docker.value as Node, `${where}.docker`);
+  if (docker)
+    (out as { docker?: Docker | string }).docker = validateDocker(ctx, docker.value as Node, `${where}.docker`);
   return out;
 }
 

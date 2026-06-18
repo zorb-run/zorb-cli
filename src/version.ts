@@ -4,8 +4,7 @@ export const VERSION: string = pkg.version;
 
 // Injected by the bundler at build time (see A16). Empty in dev mode.
 declare const __ZORB_BUILD_HASH__: string | undefined;
-const BUILD_HASH: string =
-  typeof __ZORB_BUILD_HASH__ === 'string' ? __ZORB_BUILD_HASH__ : '';
+const BUILD_HASH: string = typeof __ZORB_BUILD_HASH__ === 'string' ? __ZORB_BUILD_HASH__ : '';
 
 let cached: string | undefined;
 

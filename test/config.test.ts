@@ -2,12 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  findWorkflowFile,
-  loadWorkflow,
-  parseWorkflow,
-  WorkflowError,
-} from '../src/config.ts';
+import { findWorkflowFile, loadWorkflow, parseWorkflow, WorkflowError } from '../src/config.ts';
 
 function tmp(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'zorb-config-'));
@@ -99,24 +94,18 @@ describe('parseWorkflow — strict validation', () => {
   });
 
   test('unknown step key (the setp: typo)', () => {
-    const e = expectError(() =>
-      parseWorkflow(`tasks:\n  build:\n    setps:\n      - run: foo`, 'wf.yml'),
-    );
+    const e = expectError(() => parseWorkflow(`tasks:\n  build:\n    setps:\n      - run: foo`, 'wf.yml'));
     expect(e.message).toContain("unknown key 'setps'");
     expect(e.hint).toBe("did you mean 'steps'?");
   });
 
   test('step missing both run and uses', () => {
-    const e = expectError(() =>
-      parseWorkflow(`tasks:\n  b:\n    steps:\n      - name: foo`),
-    );
+    const e = expectError(() => parseWorkflow(`tasks:\n  b:\n    steps:\n      - name: foo`));
     expect(e.message).toContain(`must define either 'run' or 'uses'`);
   });
 
   test('step with both run and uses', () => {
-    const e = expectError(() =>
-      parseWorkflow(`tasks:\n  b:\n    steps:\n      - run: foo\n        uses: bar`),
-    );
+    const e = expectError(() => parseWorkflow(`tasks:\n  b:\n    steps:\n      - run: foo\n        uses: bar`));
     expect(e.message).toContain(`cannot define both 'run' and 'uses'`);
   });
 
@@ -128,9 +117,7 @@ describe('parseWorkflow — strict validation', () => {
   });
 
   test('cwd: only allowed on run steps', () => {
-    const e = expectError(() =>
-      parseWorkflow(`tasks:\n  b:\n    steps:\n      - uses: ./action\n        cwd: /tmp`),
-    );
+    const e = expectError(() => parseWorkflow(`tasks:\n  b:\n    steps:\n      - uses: ./action\n        cwd: /tmp`));
     expect(e.message).toContain("unknown key 'cwd'");
   });
 
@@ -169,9 +156,7 @@ describe('parseWorkflow — strict validation', () => {
   });
 
   test('wrong scalar type', () => {
-    const e = expectError(() =>
-      parseWorkflow(`tasks:\n  b:\n    description: 123\n    steps:\n      - run: foo`),
-    );
+    const e = expectError(() => parseWorkflow(`tasks:\n  b:\n    description: 123\n    steps:\n      - run: foo`));
     expect(e.message).toContain('must be a string');
   });
 
@@ -250,7 +235,7 @@ tasks:
 `),
     );
     expect(e.message).toContain("'run:' is not allowed in the 'secrets:' block");
-    expect(e.hint).toContain("uses:");
+    expect(e.hint).toContain('uses:');
   });
 
   test('secrets: step with docker: is rejected', () => {
