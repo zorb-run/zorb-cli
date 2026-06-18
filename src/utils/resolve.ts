@@ -46,6 +46,21 @@ export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
     return resolveNpmAction(uses, fromFile);
   }
 
+  const baseDir = dirname(fromFile);
+  const absolute = isAbsolute(uses) ? uses : resolvePath(baseDir, uses);
+
+  // If the user wrote an explicit recognised extension, use the file as-is.
+  // This is checked before the workflow-ref pattern so that an action file
+  // legitimately named `zorb.js` / `zorb.ts` / etc. resolves as an action,
+  // not as a workflow ref to a task called `js`/`ts`.
+  const exactExt = extensionOf(absolute);
+  if (exactExt && ACTION_EXTENSIONS.includes(exactExt)) {
+    if (existsAsFile(absolute)) {
+      return { kind: 'action', path: absolute, language: languageFor(exactExt) };
+    }
+    throw new ResolveError(`action file does not exist: ${absolute}`);
+  }
+
   // Cross-file workflow refs use a 'zorb' basename: ./zorb.build,
   // ./infra/zorb.deploy. The segment before the first dot is 'zorb'.
   const base = parse(uses).base;
@@ -53,18 +68,6 @@ export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
   const stem = firstDot === -1 ? base : base.slice(0, firstDot);
   if (stem === 'zorb') {
     return resolveWorkflowRef(uses, fromFile, base, firstDot);
-  }
-
-  const baseDir = dirname(fromFile);
-  const absolute = isAbsolute(uses) ? uses : resolvePath(baseDir, uses);
-
-  // If the user already wrote a recognised extension, use the file as-is.
-  const exactExt = extensionOf(absolute);
-  if (exactExt && ACTION_EXTENSIONS.includes(exactExt)) {
-    if (existsAsFile(absolute)) {
-      return { kind: 'action', path: absolute, language: languageFor(exactExt) };
-    }
-    throw new ResolveError(`action file does not exist: ${absolute}`);
   }
 
   // Otherwise try each known extension in order.

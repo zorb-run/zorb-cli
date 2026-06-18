@@ -262,6 +262,32 @@ describe('resolveUses — cross-file workflow refs', () => {
   });
 });
 
+describe('resolveUses — explicit-extension precedence', () => {
+  test('./zorb.js with a recognised extension resolves as an action file, not a workflow ref', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.js'), 'module.exports.action = () => ({});');
+      const r = asAction(resolveUses({ uses: './zorb.js', fromFile: join(dir, 'zorb.yml') }));
+      expect(r.path).toBe(join(dir, 'zorb.js'));
+      expect(r.language).toBe('js');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('./zorb.py resolves as a Python action file', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.py'), 'def action(i, c): return {}');
+      const r = asAction(resolveUses({ uses: './zorb.py', fromFile: join(dir, 'zorb.yml') }));
+      expect(r.path).toBe(join(dir, 'zorb.py'));
+      expect(r.language).toBe('py');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('resolveUses — errors', () => {
   test('does NOT treat names that merely start with `zorb` as cross-file', () => {
     const { dir, cleanup } = tmp();
