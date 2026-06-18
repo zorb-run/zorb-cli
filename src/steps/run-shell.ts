@@ -60,6 +60,64 @@ export async function executeShellStep(opts: ShellExecOptions): Promise<ShellExe
   };
 }
 
+export class ShellOutputError extends Error {
+  override readonly name = 'ShellOutputError';
+}
+
+const KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_-]*$/;
+
+// Parse a $ZORB_OUTPUT file. Supports two line shapes, mirroring GitHub
+// Actions' $GITHUB_OUTPUT format:
+//   key=value
+//   key<<DELIM
+//   …multi-line value…
+//   DELIM
+// Blank lines and lines starting with `#` are ignored. Repeated keys
+// overwrite earlier values (last write wins).
+export function parseShellOutputs(text: string): Record<string, string> {
+  const out: Record<string, string> = Object.create(null);
+  const lines = text.split('\n');
+  // Trailing newline produces a final empty string element — drop it so
+  // we don't treat it as a stray blank line.
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line === '' || line.startsWith('#')) continue;
+
+    const hd = /^([a-zA-Z_][a-zA-Z0-9_-]*)<<([A-Za-z_][A-Za-z0-9_]*)$/.exec(line);
+    if (hd) {
+      const key = hd[1]!;
+      const delim = hd[2]!;
+      const valLines: string[] = [];
+      let closed = false;
+      while (++i < lines.length) {
+        if (lines[i] === delim) {
+          closed = true;
+          break;
+        }
+        valLines.push(lines[i]!);
+      }
+      if (!closed) {
+        throw new ShellOutputError(`unterminated heredoc for output '${key}' (expected closing '${delim}')`);
+      }
+      out[key] = valLines.join('\n');
+      continue;
+    }
+
+    const eq = line.indexOf('=');
+    if (eq > 0) {
+      const key = line.slice(0, eq);
+      if (KEY_RE.test(key)) {
+        out[key] = line.slice(eq + 1);
+        continue;
+      }
+    }
+    throw new ShellOutputError(`invalid line in $ZORB_OUTPUT: ${JSON.stringify(line)}`);
+  }
+  return out;
+}
+
 async function collectOutput(
   stream: unknown,
   spawnMode: ShellStdio,

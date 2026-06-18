@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { executeShellStep } from '../src/steps/run-shell.ts';
+import { executeShellStep, parseShellOutputs, ShellOutputError } from '../src/steps/run-shell.ts';
 
 function tmp(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'zorb-runshell-'));
@@ -192,5 +192,63 @@ echo "still in same shell: $FOO"`,
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('parseShellOutputs', () => {
+  test('parses a single key=value pair', () => {
+    expect(parseShellOutputs('foo=bar\n')).toEqual({ foo: 'bar' });
+  });
+
+  test('parses multiple key=value pairs', () => {
+    expect(parseShellOutputs('a=1\nb=2\nc=three\n')).toEqual({ a: '1', b: '2', c: 'three' });
+  });
+
+  test('keeps additional `=` signs intact on the value side', () => {
+    expect(parseShellOutputs('url=https://example.com/?q=hello\n')).toEqual({
+      url: 'https://example.com/?q=hello',
+    });
+  });
+
+  test('supports hyphenated keys', () => {
+    expect(parseShellOutputs('dry-run=true\n')).toEqual({ 'dry-run': 'true' });
+  });
+
+  test('ignores blank lines and comments', () => {
+    expect(parseShellOutputs('# a comment\n\nfoo=bar\n\n# another\n')).toEqual({ foo: 'bar' });
+  });
+
+  test('last write wins on duplicate keys', () => {
+    expect(parseShellOutputs('k=one\nk=two\n')).toEqual({ k: 'two' });
+  });
+
+  test('parses heredoc multi-line values', () => {
+    const text = 'body<<EOF\nline one\nline two\nEOF\n';
+    expect(parseShellOutputs(text)).toEqual({ body: 'line one\nline two' });
+  });
+
+  test('heredoc with an empty body yields an empty string', () => {
+    expect(parseShellOutputs('empty<<EOF\nEOF\n')).toEqual({ empty: '' });
+  });
+
+  test('heredoc accepts custom delimiters', () => {
+    expect(parseShellOutputs('k<<DONE\nhello\nDONE\n')).toEqual({ k: 'hello' });
+  });
+
+  test('errors on an unterminated heredoc', () => {
+    expect(() => parseShellOutputs('k<<EOF\nhello\n')).toThrow(ShellOutputError);
+  });
+
+  test('errors on lines that are not key=value or heredoc', () => {
+    expect(() => parseShellOutputs('garbage\n')).toThrow(ShellOutputError);
+    expect(() => parseShellOutputs('garbage\n')).toThrow('invalid line in $ZORB_OUTPUT');
+  });
+
+  test('errors on keys that start with a digit', () => {
+    expect(() => parseShellOutputs('1bad=v\n')).toThrow(ShellOutputError);
+  });
+
+  test('empty input yields an empty map', () => {
+    expect(parseShellOutputs('')).toEqual({});
   });
 });

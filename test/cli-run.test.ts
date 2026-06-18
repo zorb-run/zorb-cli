@@ -547,3 +547,149 @@ tasks:
     }
   });
 });
+
+describe('zorb run — step outputs', () => {
+  test('shell step writes key=value to $ZORB_OUTPUT and a later step reads it via env', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: version
+        run: echo "tag=v1.2.3" >> "$ZORB_OUTPUT"
+      - name: Tag
+        env:
+          TAG: \${{ steps.version.outputs.tag }}
+        run: echo "releasing $TAG"
+`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('releasing v1.2.3');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('shell step heredoc multi-line output is preserved', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: notes
+        run: |
+          {
+            echo 'body<<EOF'
+            echo 'line one'
+            echo 'line two'
+            echo 'EOF'
+          } >> "$ZORB_OUTPUT"
+      - env:
+          BODY: \${{ steps.notes.outputs.body }}
+        run: printf '%s' "$BODY"
+`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('line one\nline two');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('shell step with no id discards $ZORB_OUTPUT writes silently', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  noop:
+    steps:
+      - run: echo "tag=v1" >> "$ZORB_OUTPUT"
+      - run: echo done
+`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'noop'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('done');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('referencing an undefined step output errors', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: version
+        run: echo "tag=v1" >> "$ZORB_OUTPUT"
+      - env:
+          MISSING: \${{ steps.version.outputs.commit }}
+        run: echo "$MISSING"
+`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toContain('undefined step output: steps.version.outputs.commit');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('invalid $ZORB_OUTPUT lines fail the step with a clear error', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: bad
+        run: echo 'not an assignment' >> "$ZORB_OUTPUT"
+`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toContain('invalid line in $ZORB_OUTPUT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('action step output flows into a later shell step via env', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'tag.action.cjs'),
+        `module.exports.action = (inputs, ctx) => ({ tag: 'v9.9.9', count: 3 });\n`,
+      );
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: v
+        uses: ./tag.action
+      - env:
+          TAG: \${{ steps.v.outputs.tag }}
+          COUNT: \${{ steps.v.outputs.count }}
+        run: echo "tag=$TAG count=$COUNT"
+`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('tag=v9.9.9 count=3');
+    } finally {
+      cleanup();
+    }
+  });
+});
