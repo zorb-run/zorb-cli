@@ -546,17 +546,4 @@ tasks:
       cleanup();
     }
   });
-
-  test('uses: with a cross-file zorb.<task> spec errors with an A10 hint', async () => {
-    const { dir, cleanup } = tmp();
-    try {
-      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  release:\n    steps:\n      - uses: ./zorb.build\n`);
-      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain('./zorb.build');
-      expect(stderr).toContain('A10');
-    } finally {
-      cleanup();
-    }
-  });
 });

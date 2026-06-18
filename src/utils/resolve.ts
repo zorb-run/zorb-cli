@@ -15,9 +15,19 @@ export class ResolveError extends Error {
 export type ActionLanguage = 'js' | 'py';
 
 export interface ResolvedAction {
+  kind: 'action';
   path: string;
   language: ActionLanguage;
 }
+
+export interface ResolvedWorkflow {
+  kind: 'workflow';
+  /** Absolute path to the callee's zorb.yml. */
+  workflowPath: string;
+  taskName: string;
+}
+
+export type Resolved = ResolvedAction | ResolvedWorkflow;
 
 export const ACTION_EXTENSIONS: readonly string[] = ['.js', '.cjs', '.mjs', '.ts', '.py'];
 
@@ -26,7 +36,7 @@ export interface ResolveOptions {
   fromFile: string;
 }
 
-export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedAction {
+export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
   if (uses === '') {
     throw new ResolveError(`'uses:' value is empty`);
   }
@@ -42,7 +52,7 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
   const firstDot = base.indexOf('.');
   const stem = firstDot === -1 ? base : base.slice(0, firstDot);
   if (stem === 'zorb') {
-    throw new ResolveError(`cannot resolve workflow task reference '${uses}'`, `cross-file references arrive in A10`);
+    return resolveWorkflowRef(uses, fromFile, base, firstDot);
   }
 
   const baseDir = dirname(fromFile);
@@ -52,7 +62,7 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
   const exactExt = extensionOf(absolute);
   if (exactExt && ACTION_EXTENSIONS.includes(exactExt)) {
     if (existsAsFile(absolute)) {
-      return { path: absolute, language: languageFor(exactExt) };
+      return { kind: 'action', path: absolute, language: languageFor(exactExt) };
     }
     throw new ResolveError(`action file does not exist: ${absolute}`);
   }
@@ -63,11 +73,34 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
     const candidate = absolute + ext;
     tried.push(candidate);
     if (existsAsFile(candidate)) {
-      return { path: candidate, language: languageFor(ext) };
+      return { kind: 'action', path: candidate, language: languageFor(ext) };
     }
   }
 
   throw new ResolveError(`could not resolve action '${uses}'`, `tried: ${tried.join(', ')}`);
+}
+
+// Parse `./[dir/]zorb.<taskname>` into a workflow ref. The runner loads the
+// target zorb.yml — we don't open it here.
+function resolveWorkflowRef(uses: string, fromFile: string, base: string, firstDot: number): ResolvedWorkflow {
+  const taskName = firstDot === -1 ? '' : base.slice(firstDot + 1);
+  if (taskName.length === 0) {
+    throw new ResolveError(
+      `workflow reference '${uses}' has no task name`,
+      `expected the form ./[dir/]zorb.<taskname>`,
+    );
+  }
+  if (taskName.includes('.')) {
+    throw new ResolveError(
+      `workflow reference '${uses}' has an invalid task name '${taskName}'`,
+      `task names cannot contain '.'`,
+    );
+  }
+  const baseDir = dirname(fromFile);
+  const usesDir = dirname(uses);
+  const targetDir = isAbsolute(uses) ? usesDir : resolvePath(baseDir, usesDir);
+  const workflowPath = join(targetDir, 'zorb.yml');
+  return { kind: 'workflow', workflowPath, taskName };
 }
 
 interface NpmSpec {
@@ -110,7 +143,7 @@ function resolveNpmAction(uses: string, fromFile: string): ResolvedAction {
   }
   const ext = extensionOf(resolved);
   const language = ext && ACTION_EXTENSIONS.includes(ext) ? languageFor(ext) : 'js';
-  return { path: resolved, language };
+  return { kind: 'action', path: resolved, language };
 }
 
 function findPackageDir(pkg: string, fromDir: string): string | undefined {
