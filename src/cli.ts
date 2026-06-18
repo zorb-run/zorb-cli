@@ -3,12 +3,14 @@ import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
 import { runList } from './commands/list.ts';
 import { runRun } from './commands/run.ts';
+import { runUse } from './commands/use.ts';
 import { WorkflowError } from './config.ts';
 import { EnvFileError, parseEnvFile, parseInlineEnv } from './envfile.ts';
 import { ExpressionError } from './expressions.ts';
 import { InputError } from './inputs.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
+import { ActionRunError } from './steps/run-action.ts';
 import { getVersionString } from './version.ts';
 
 interface ParsedArgs {
@@ -145,7 +147,7 @@ export async function main(rawArgs: string[]): Promise<number> {
         return 1;
       }
       try {
-        return runRun({
+        return await runRun({
           log,
           colors,
           file: args.file,
@@ -170,10 +172,18 @@ export async function main(rawArgs: string[]): Promise<number> {
         log.hint(`Run '${colors.bold('zorb help use')}' for details.`);
         return 1;
       }
-      log.debug(`parsed args:`, args);
-      log.verbose(`would run action '${action}' with ${args.with.length} input(s)`);
-      log.info(colors.dim(`(scaffold) zorb use ${action} — execution not yet implemented`));
-      return 0;
+      try {
+        return await runUse({
+          log,
+          colors,
+          file: args.file,
+          action,
+          withPairs: args.with,
+          inlineEnv,
+        });
+      } catch (e) {
+        return handleRunError(e, log);
+      }
     }
 
     case 'list': {
@@ -215,7 +225,7 @@ function handleEnvFileError(e: unknown, log: Logger): number {
 
 function handleRunError(e: unknown, log: Logger): number {
   if (e instanceof WorkflowError) return handleWorkflowError(e, log);
-  if (e instanceof InputError || e instanceof ExpressionError) {
+  if (e instanceof InputError || e instanceof ExpressionError || e instanceof ActionRunError) {
     log.error(e.message);
     return 1;
   }

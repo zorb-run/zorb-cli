@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
 
 const CLI = new URL('../src/cli.ts', import.meta.url).pathname;
@@ -118,12 +121,6 @@ describe('zorb use', () => {
     expect(stderr).toContain('Usage: zorb use <action>');
   });
 
-  test('with an action prints scaffold message and exits 0', async () => {
-    const { exitCode, stdout } = await runCli(['use', './check.action']);
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain('zorb use ./check.action');
-  });
-
   test('--help shows command help', async () => {
     const { exitCode, stdout } = await runCli(['use', '--help']);
     expect(exitCode).toBe(0);
@@ -140,28 +137,91 @@ describe('unknown commands', () => {
 });
 
 describe('verbosity flags', () => {
-  // `zorb use` is still a scaffold (execution lands in A11), so it's a
-  // workflow-free way to exercise the verbose/debug log paths.
+  // Spin up a real working `zorb use` invocation so the verbosity tests
+  // exercise actual log.verbose / log.debug call sites in the runUse path.
+  function setupAction() {
+    const dir = mkdtempSync(join(tmpdir(), 'zorb-cli-verb-'));
+    writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  noop:\n    steps:\n      - run: ":"\n`);
+    writeFileSync(join(dir, 'noop.action.cjs'), `module.exports.action = () => ({});`);
+    return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
   test('default level hides debug output', async () => {
-    const { stderr } = await runCli(['use', './fake.action']);
-    expect(stderr).not.toContain('[debug]');
-    expect(stderr).not.toContain('[verbose]');
+    const { dir, cleanup } = setupAction();
+    try {
+      const proc = Bun.spawn({
+        cmd: ['bun', CLI, 'use', './noop.action'],
+        cwd: dir,
+        env: { ...process.env, NO_COLOR: '1' } as Record<string, string>,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      expect(proc.exitCode).toBe(0);
+      expect(stderr).not.toContain('[debug]');
+      expect(stderr).not.toContain('[verbose]');
+    } finally {
+      cleanup();
+    }
   });
 
   test('--verbose shows verbose output', async () => {
-    const { stderr } = await runCli(['use', './fake.action', '--verbose']);
-    expect(stderr).toContain('[verbose]');
-    expect(stderr).not.toContain('[debug]');
+    const { dir, cleanup } = setupAction();
+    try {
+      const proc = Bun.spawn({
+        cmd: ['bun', CLI, 'use', './noop.action', '--verbose'],
+        cwd: dir,
+        env: { ...process.env, NO_COLOR: '1' } as Record<string, string>,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      expect(proc.exitCode).toBe(0);
+      expect(stderr).toContain('[verbose]');
+      expect(stderr).not.toContain('[debug]');
+    } finally {
+      cleanup();
+    }
   });
 
   test('-v is an alias for --verbose', async () => {
-    const { stderr } = await runCli(['use', './fake.action', '-v']);
-    expect(stderr).toContain('[verbose]');
+    const { dir, cleanup } = setupAction();
+    try {
+      const proc = Bun.spawn({
+        cmd: ['bun', CLI, 'use', './noop.action', '-v'],
+        cwd: dir,
+        env: { ...process.env, NO_COLOR: '1' } as Record<string, string>,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      expect(proc.exitCode).toBe(0);
+      expect(stderr).toContain('[verbose]');
+    } finally {
+      cleanup();
+    }
   });
 
   test('--debug shows debug and verbose output', async () => {
-    const { stderr } = await runCli(['use', './fake.action', '--debug']);
-    expect(stderr).toContain('[debug]');
+    const { dir, cleanup } = setupAction();
+    try {
+      const proc = Bun.spawn({
+        cmd: ['bun', CLI, 'use', './noop.action', '--debug'],
+        cwd: dir,
+        env: { ...process.env, NO_COLOR: '1' } as Record<string, string>,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      expect(proc.exitCode).toBe(0);
+      expect(stderr).toContain('[debug]');
+    } finally {
+      cleanup();
+    }
   });
 
   test('--quiet suppresses info output but keeps errors', async () => {
