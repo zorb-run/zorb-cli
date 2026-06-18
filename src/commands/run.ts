@@ -6,7 +6,7 @@ import { interpolateMap } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
-import { isActionStep, isShellStep, type Input, type Step, type WithValue } from '../types.ts';
+import { isActionStep, isShellStep, type EnvMap, type Input, type Step, type WithValue } from '../types.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -66,21 +66,14 @@ export async function runRun({
     }
   }
 
-  // Base env: process env → workflow env → task env. Each layer is interpolated
-  // against inputs + the env accumulated so far, so earlier layers are visible
-  // to later ones via ${{ env.KEY }}.
-  const baseEnv: Record<string, string> = Object.create(null);
+  const procEnv: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) baseEnv[k] = v;
+    if (v !== undefined) procEnv[k] = v;
   }
   const secretsSnap = () => runCtx.getSecretsSnapshot();
-  if (workflow.env) Object.assign(baseEnv, interpolateMap(workflow.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() }));
-  if (task.env) Object.assign(baseEnv, interpolateMap(task.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() }));
 
   const defaultCwd = dirname(path);
   const total = task.steps.length;
-
-  log.debug('base env:', baseEnv);
 
   for (let i = 0; i < total; i++) {
     const step = task.steps[i]!;
@@ -94,14 +87,27 @@ export async function runRun({
       return 1;
     }
 
-    // Merge any env registered by previous action steps (no-op until A8).
-    Object.assign(baseEnv, runCtx.getDynamicEnv());
-
+    // Env layers, lowest → highest. `defaults.run.env` is the floor at each
+    // scope: explicit `env:` at the same scope wins. Each layer is interpolated
+    // against the accumulated env so later layers can reference earlier ones.
+    const acc: Record<string, string> = Object.assign(Object.create(null), procEnv);
+    const layer = (m: EnvMap | undefined) => {
+      if (!m) return;
+      Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap() }));
+    };
+    layer(workflow.defaults?.run?.env);
+    layer(workflow.env);
+    layer(task.defaults?.run?.env);
+    layer(task.env);
+    Object.assign(acc, runCtx.getDynamicEnv());
     const stepEnv = step.env
-      ? interpolateMap(step.env, { inputs, env: { ...baseEnv }, secrets: secretsSnap() })
+      ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap() })
       : {};
-    const effectiveEnv: Record<string, string> = Object.assign(Object.create(null), baseEnv, stepEnv);
-    const stepCwd = step.cwd ? resolvePath(defaultCwd, step.cwd) : defaultCwd;
+    const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
+
+    const stepShell = step.shell ?? task.defaults?.run?.shell ?? workflow.defaults?.run?.shell;
+    const cwdOverride = step.cwd ?? task.defaults?.run?.cwd ?? workflow.defaults?.run?.cwd;
+    const stepCwd = cwdOverride ? resolvePath(defaultCwd, cwdOverride) : defaultCwd;
 
     log.debug(`  cwd: ${stepCwd}`);
     if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
@@ -110,7 +116,7 @@ export async function runRun({
       run: step.run,
       env: effectiveEnv,
       cwd: stepCwd,
-      shell: step.shell,
+      shell: stepShell,
       mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
     });
 

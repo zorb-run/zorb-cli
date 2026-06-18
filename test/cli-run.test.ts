@@ -361,6 +361,152 @@ tasks:
     }
   });
 
+  test('workflow defaults.run.shell sets the default shell', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    shell: /bin/sh\ntasks:\n  s:\n    steps:\n      - run: echo $0\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('/bin/sh');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('task defaults.run.shell overrides workflow defaults', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    shell: /bin/bash\ntasks:\n  s:\n    defaults:\n      run:\n        shell: /bin/sh\n    steps:\n      - run: echo $0\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('/bin/sh');
+      expect(stdout).not.toContain('/bin/bash');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('step shell overrides defaults at every scope', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    shell: /bin/bash\ntasks:\n  s:\n    defaults:\n      run:\n        shell: /bin/bash\n    steps:\n      - shell: /bin/sh\n        run: echo $0\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('/bin/sh');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('workflow defaults.run.cwd applies when step has none', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const sub = join(dir, 'sub');
+      mkdirSync(sub, { recursive: true });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    cwd: ./sub\ntasks:\n  here:\n    steps:\n      - run: pwd\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'here'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('/sub');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('task defaults.run.cwd overrides workflow defaults', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      mkdirSync(join(dir, 'a'), { recursive: true });
+      mkdirSync(join(dir, 'b'), { recursive: true });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    cwd: ./a\ntasks:\n  here:\n    defaults:\n      run:\n        cwd: ./b\n    steps:\n      - run: pwd\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'here'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toMatch(/\/b\b/);
+      expect(stdout).not.toMatch(/\/a\b/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('step cwd overrides defaults', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      mkdirSync(join(dir, 'a'), { recursive: true });
+      mkdirSync(join(dir, 'b'), { recursive: true });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    cwd: ./a\ntasks:\n  here:\n    steps:\n      - cwd: ./b\n        run: pwd\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'here'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toMatch(/\/b\b/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('workflow defaults.run.env provides default env vars', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    env:\n      DEFAULTED: from-defaults\ntasks:\n  s:\n    steps:\n      - run: echo "v=$DEFAULTED"\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('v=from-defaults');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('explicit env overrides defaults.run.env at every scope', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      // workflow defaults.run.env is the floor; workflow.env, task.defaults.run.env,
+      // task.env, and step.env each override it in turn.
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    env:\n      LAYER: wf-defaults\nenv:\n  LAYER: wf\ntasks:\n  s:\n    defaults:\n      run:\n        env:\n          LAYER: task-defaults\n    env:\n      LAYER: task\n    steps:\n      - run: echo "task=$LAYER"\n      - env:\n          LAYER: step\n        run: echo "step=$LAYER"\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('task=task');
+      expect(stdout).toContain('step=step');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('task defaults.run.env overrides workflow defaults.run.env', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  run:\n    env:\n      LAYER: wf-defaults\ntasks:\n  s:\n    defaults:\n      run:\n        env:\n          LAYER: task-defaults\n    steps:\n      - run: echo "v=$LAYER"\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('v=task-defaults');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('uses: steps error with an A8 hint', async () => {
     const { dir, cleanup } = tmp();
     try {
