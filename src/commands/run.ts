@@ -8,6 +8,7 @@ import { interpolateMap, interpolateWith } from '../expressions.ts';
 import { InputError, parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep, parseShellOutputs, ShellOutputError } from '../steps/run-shell.ts';
+import { executeDockerStep } from '../steps/run-docker.ts';
 import { DEFAULT_BINS, executeActionStep } from '../steps/run-action.ts';
 import {
   isActionStep,
@@ -196,8 +197,10 @@ async function runTask(args: TaskRunArgs): Promise<number> {
       continue;
     }
 
-    // Shell step — process.env + inline + workflow/task/step env.
-    const acc: Record<string, string> = Object.assign(Object.create(null), shellEnvBase);
+    // Shell or Docker step. Docker steps use actionEnvBase (no process.env leak
+    // into the container); shell steps inherit process.env via shellEnvBase.
+    const usesDocker = step.docker !== undefined;
+    const acc: Record<string, string> = Object.assign(Object.create(null), usesDocker ? actionEnvBase : shellEnvBase);
     const layer = (m: EnvMap | undefined) => {
       if (!m) return;
       Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap(), steps: stepsSnap() }));
@@ -212,7 +215,11 @@ async function runTask(args: TaskRunArgs): Promise<number> {
       : {};
     const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
 
-    const stepShell = step.shell ?? task.defaults?.run?.shell ?? workflow.defaults?.run?.shell;
+    // For docker steps, defaults.run.shell is a host-shell setting and doesn't
+    // belong inside the container — only honour step.shell (default /bin/sh).
+    const stepShell = usesDocker
+      ? step.shell
+      : (step.shell ?? task.defaults?.run?.shell ?? workflow.defaults?.run?.shell);
     const cwdOverride = step.cwd ?? task.defaults?.run?.cwd ?? workflow.defaults?.run?.cwd;
     const stepCwd = cwdOverride ? resolvePath(defaultCwd, cwdOverride) : defaultCwd;
 
@@ -224,18 +231,33 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     // Outputs are only registered into the RunContext when an id is present.
     const outputDir = mkdtempSync(join(tmpdir(), 'zorb-step-'));
     const outputFile = join(outputDir, 'output');
-    writeFileSync(outputFile, '');
-    effectiveEnv.ZORB_OUTPUT = outputFile;
+    writeFileSync(outputFile, '', { mode: 0o666 });
 
     let result;
     try {
-      result = await executeShellStep({
-        run: step.run,
-        env: effectiveEnv,
-        cwd: stepCwd,
-        shell: stepShell,
-        mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
-      });
+      if (usesDocker) {
+        // Mount the host output file inside the container at a fixed path; the
+        // docker executor wires ZORB_OUTPUT to the in-container path so the
+        // shell command sees the right value regardless of host pathnames.
+        result = await executeDockerStep({
+          run: step.run,
+          env: effectiveEnv,
+          cwd: stepCwd,
+          docker: step.docker!,
+          shell: stepShell,
+          outputMount: { hostPath: outputFile, containerPath: '/zorb-output' },
+          mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
+        });
+      } else {
+        effectiveEnv.ZORB_OUTPUT = outputFile;
+        result = await executeShellStep({
+          run: step.run,
+          env: effectiveEnv,
+          cwd: stepCwd,
+          shell: stepShell,
+          mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
+        });
+      }
 
       if (result.exitCode !== 0) {
         log.error(`step ${i + 1}/${total} failed with exit code ${result.exitCode}`);

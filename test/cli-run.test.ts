@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -688,6 +688,169 @@ describe('zorb run — step outputs', () => {
       const { exitCode, stdout } = await runCli(['run', 'release'], { cwd: dir });
       expect(exitCode).toBe(0);
       expect(stdout).toContain('tag=v9.9.9 count=3');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('zorb run — docker steps', () => {
+  // We can't depend on a real Docker daemon in CI, so we drop a fake `docker`
+  // script in a temp dir and prepend that dir to PATH for the CLI subprocess.
+  // The shim records its argv (and optionally writes to the ZORB_OUTPUT mount)
+  // so we can assert what the CLI handed to docker.
+  function setupFakeDocker(dir: string, body: string): { pathEnv: string; argvLog: string } {
+    const binDir = join(dir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const argvLog = join(dir, 'docker.argv');
+    const shim = `#!/bin/sh
+for arg in "$@"; do printf '%s\\n' "$arg" >> '${argvLog}'; done
+${body}
+`;
+    writeFileSync(join(binDir, 'docker'), shim, { mode: 0o755 });
+    return { pathEnv: `${binDir}:${process.env.PATH}`, argvLog };
+  }
+
+  test('runs a docker step and propagates a zero exit', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv, argvLog } = setupFakeDocker(dir, 'echo "hello from container"; exit 0');
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  d:\n    steps:\n      - docker: alpine:3.20\n        run: echo hi\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'd'], { cwd: dir, env: { PATH: pathEnv } });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('hello from container');
+      const argv = readFileSync(argvLog, 'utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
+      expect(argv.slice(0, 3)).toEqual(['run', '--rm', '-i']);
+      expect(argv).toContain('alpine:3.20');
+      expect(argv.slice(-3)).toEqual(['/bin/sh', '-c', 'echo hi']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('non-zero exit from the container fails the task', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv } = setupFakeDocker(dir, 'exit 19');
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  d:\n    steps:\n      - docker: alpine\n        run: 'exit 0'\n`);
+      const { exitCode, stderr } = await runCli(['run', 'd'], { cwd: dir, env: { PATH: pathEnv } });
+      expect(exitCode).toBe(19);
+      expect(stderr).toContain('step 1/1 failed');
+      expect(stderr).toContain('exit code 19');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('long form: image + workdir + platform + pull are passed to docker', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv, argvLog } = setupFakeDocker(dir, 'exit 0');
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  d:
+    steps:
+      - docker:
+          image: node:20
+          workdir: /app
+          platform: linux/amd64
+          pull: if-not-present
+          network: host
+          volumes:
+            - /host:/container
+          entrypoint: /bin/bash
+        run: echo hi
+`,
+      );
+      const { exitCode } = await runCli(['run', 'd'], { cwd: dir, env: { PATH: pathEnv } });
+      expect(exitCode).toBe(0);
+      const argv = readFileSync(argvLog, 'utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
+      const after = (flag: string) => argv[argv.indexOf(flag) + 1];
+      expect(after('--workdir')).toBe('/app');
+      expect(after('--platform')).toBe('linux/amd64');
+      expect(after('--network')).toBe('host');
+      expect(after('--entrypoint')).toBe('/bin/bash');
+      expect(after('--pull')).toBe('missing');
+      expect(argv).toContain('/host:/container');
+      expect(argv).toContain('node:20');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('declared env: is passed via -e, but process.env is NOT leaked into the container', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv, argvLog } = setupFakeDocker(dir, 'exit 0');
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `env:\n  DECLARED: yes\ntasks:\n  d:\n    steps:\n      - docker: alpine\n        env:\n          STEP_LEVEL: visible\n        run: echo hi\n`,
+      );
+      const { exitCode } = await runCli(['run', 'd'], {
+        cwd: dir,
+        env: { PATH: pathEnv, ZORB_LEAK_TEST: 'must-not-appear' },
+      });
+      expect(exitCode).toBe(0);
+      const argv = readFileSync(argvLog, 'utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
+      const envPairs = argv
+        .map((a, i) => (argv[i - 1] === '-e' ? a : undefined))
+        .filter((x): x is string => x !== undefined);
+      expect(envPairs).toContain('DECLARED=yes');
+      expect(envPairs).toContain('STEP_LEVEL=visible');
+      // The developer's shell exports must not bleed into the container.
+      expect(envPairs.some((p) => p.startsWith('ZORB_LEAK_TEST='))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('$ZORB_OUTPUT round-trips through the mount and is read back by a later shell step', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      // The shim simulates a container that writes to $ZORB_OUTPUT by parsing
+      // the -v <host>:/zorb-output pair from argv and writing to the host path.
+      const { pathEnv } = setupFakeDocker(
+        dir,
+        `prev=
+for arg in "$@"; do
+  if [ "$prev" = "-v" ]; then
+    case "$arg" in
+      *:/zorb-output)
+        host_path="\${arg%:/zorb-output}"
+        echo "tag=v3.2.1" >> "$host_path"
+        ;;
+    esac
+  fi
+  prev="$arg"
+done
+exit 0`,
+      );
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:
+  release:
+    steps:
+      - id: version
+        docker: alpine
+        run: 'true'
+      - env:
+          TAG: \${{ steps.version.outputs.tag }}
+        run: echo "releasing $TAG"
+`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'release'], { cwd: dir, env: { PATH: pathEnv } });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('releasing v3.2.1');
     } finally {
       cleanup();
     }
