@@ -6,10 +6,11 @@ import { interpolateMap, interpolateWith } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
-import { executeActionStep } from '../steps/run-action.ts';
+import { DEFAULT_BINS, executeActionStep } from '../steps/run-action.ts';
 import {
   isActionStep,
   isShellStep,
+  type ActionDefaults,
   type ActionStep,
   type EnvMap,
   type Input,
@@ -17,7 +18,7 @@ import {
   type WithMap,
   type WithValue,
 } from '../types.ts';
-import { resolveAction, ResolveError } from '../utils/resolve.ts';
+import { resolveAction, ResolveError, type ResolvedAction } from '../utils/resolve.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -180,8 +181,8 @@ export async function runRun({
 
 interface RunActionArgs {
   step: ActionStep;
-  workflow: { defaults?: { run?: { env?: EnvMap } }; env?: EnvMap };
-  task: { defaults?: { run?: { env?: EnvMap } }; env?: EnvMap } | undefined;
+  workflow: { defaults?: { action?: ActionDefaults }; env?: EnvMap };
+  task: { defaults?: { action?: ActionDefaults }; env?: EnvMap } | undefined;
   inputs: Record<string, WithValue>;
   runCtx: RunContext;
   actionEnvBase: Record<string, string>;
@@ -227,7 +228,10 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
     ? interpolateWith(step.with, { inputs, env: effectiveEnv, secrets: secretsSnap })
     : {};
 
+  const bin = resolveActionBin(resolved, step, task, workflow);
+
   log.debug(`  action: ${resolved.path} (${resolved.language})`);
+  log.debug(`  bin:    ${bin}`);
   if (Object.keys(withMap).length > 0) log.debug(`  with:`, withMap);
   if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
 
@@ -236,6 +240,7 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
     inputs: withMap,
     context: { cwd: defaultCwd, taskName, stepId: step.id },
     env: effectiveEnv,
+    bin,
   });
 
   if (result.exitCode !== 0) return result.exitCode;
@@ -254,6 +259,23 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
 
 function resolvePath(base: string, p: string): string {
   return isAbsolute(p) ? p : resolve(base, p);
+}
+
+// Precedence: step.bin → task.defaults.action[lang].bin → workflow.defaults.action[lang].bin
+// → built-in default (DEFAULT_BINS). Validator guarantees any user-supplied
+// template is non-empty and contains '{0}'.
+function resolveActionBin(
+  resolved: ResolvedAction,
+  step: ActionStep,
+  task: { defaults?: { action?: ActionDefaults } } | undefined,
+  workflow: { defaults?: { action?: ActionDefaults } },
+): string {
+  if (step.bin) return step.bin;
+  const taskBin = task?.defaults?.action?.[resolved.language]?.bin;
+  if (taskBin) return taskBin;
+  const wfBin = workflow.defaults?.action?.[resolved.language]?.bin;
+  if (wfBin) return wfBin;
+  return DEFAULT_BINS[resolved.language];
 }
 
 function stepLabel(step: Step): string {

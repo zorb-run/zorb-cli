@@ -82,6 +82,88 @@ tasks:
     expect(a!.docker).toBe('postgres:16');
     expect(b!.docker).toMatchObject({ image: 'node:20-alpine', pull: 'if-not-present' });
   });
+
+  test('defaults.action.{js,py}.bin parses', () => {
+    const wf = parseWorkflow(`
+defaults:
+  action:
+    js:
+      bin: bun {0}
+    py:
+      bin: python3 {0}
+tasks:
+  t:
+    steps:
+      - uses: ./foo.action
+`);
+    expect(wf.defaults?.action?.js?.bin).toBe('bun {0}');
+    expect(wf.defaults?.action?.py?.bin).toBe('python3 {0}');
+  });
+
+  test('task-level defaults.action overrides workflow-level', () => {
+    const wf = parseWorkflow(`
+defaults:
+  action:
+    js:
+      bin: bun {0}
+tasks:
+  t:
+    defaults:
+      action:
+        js:
+          bin: node --import tsx {0}
+    steps:
+      - uses: ./foo.action
+`);
+    expect(wf.defaults?.action?.js?.bin).toBe('bun {0}');
+    expect(wf.tasks.t!.defaults?.action?.js?.bin).toBe('node --import tsx {0}');
+  });
+
+  test('step-level bin: parses on a uses step', () => {
+    const wf = parseWorkflow(`
+tasks:
+  t:
+    steps:
+      - uses: ./foo.action
+        bin: node {0}
+`);
+    const step = wf.tasks.t!.steps[0]!;
+    expect('bin' in step && step.bin).toBe('node {0}');
+  });
+});
+
+describe('parseWorkflow — bin validation', () => {
+  test('defaults.action.js.bin without {0} placeholder errors', () => {
+    const e = expectError(() =>
+      parseWorkflow(
+        `defaults:\n  action:\n    js:\n      bin: bun\ntasks:\n  t:\n    steps:\n      - uses: ./foo.action\n`,
+      ),
+    );
+    expect(e.message).toContain(`{0}`);
+  });
+
+  test('empty bin errors', () => {
+    const e = expectError(() =>
+      parseWorkflow(`tasks:\n  t:\n    steps:\n      - uses: ./foo.action\n        bin: ""\n`),
+    );
+    expect(e.message).toContain('must not be empty');
+  });
+
+  test('unknown key under defaults.action rejected', () => {
+    const e = expectError(() =>
+      parseWorkflow(
+        `defaults:\n  action:\n    rust:\n      bin: cargo {0}\ntasks:\n  t:\n    steps:\n      - uses: ./foo.action\n`,
+      ),
+    );
+    expect(e.message).toContain(`unknown key 'rust'`);
+  });
+
+  test('bin: on a run step is rejected (it belongs on uses)', () => {
+    const e = expectError(() =>
+      parseWorkflow(`tasks:\n  t:\n    steps:\n      - run: echo hi\n        bin: bash {0}\n`),
+    );
+    expect(e.message).toContain(`unknown key 'bin'`);
+  });
 });
 
 describe('parseWorkflow — strict validation', () => {

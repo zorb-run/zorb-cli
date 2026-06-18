@@ -421,6 +421,126 @@ tasks:
     }
   });
 
+  // Action subprocesses get a strict env (no PATH), so any test wrapper that
+  // re-execs `bun` must use an absolute path resolved on the parent side.
+  const BUN_ABS = Bun.which('bun') ?? process.execPath;
+
+  function wrapperScript(tag: string): string {
+    return `#!/bin/sh\necho "${tag}=$1" >&2\nexec ${BUN_ABS} "$@"\n`;
+  }
+
+  test('step-level bin: substitutes {0} with the runner script path', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'echo.action.cjs'),
+        `module.exports.action = () => { console.error('ran'); return {}; };`,
+      );
+      const wrapper = join(dir, 'wrapper.sh');
+      writeFileSync(wrapper, wrapperScript('__runner__'), { mode: 0o755 });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  t:\n    steps:\n      - uses: ./echo.action\n        bin: "${wrapper} {0}"\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('__runner__=');
+      expect(stderr).toContain('runner.cjs');
+      expect(stderr).toContain('ran');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('workflow defaults.action.js.bin applies to all js actions', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'echo.action.cjs'),
+        `module.exports.action = () => { console.error('ran'); return {}; };`,
+      );
+      const wrapper = join(dir, 'wf-wrapper.sh');
+      writeFileSync(wrapper, wrapperScript('__wf_bin__'), { mode: 0o755 });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  action:\n    js:\n      bin: "${wrapper} {0}"\ntasks:\n  t:\n    steps:\n      - uses: ./echo.action\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('__wf_bin__');
+      expect(stderr).toContain('ran');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('task defaults.action.js.bin overrides workflow defaults', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'echo.action.cjs'),
+        `module.exports.action = () => { console.error('ran'); return {}; };`,
+      );
+      const wfWrapper = join(dir, 'wf-wrapper.sh');
+      const taskWrapper = join(dir, 'task-wrapper.sh');
+      writeFileSync(wfWrapper, wrapperScript('__wf_bin__'), { mode: 0o755 });
+      writeFileSync(taskWrapper, wrapperScript('__task_bin__'), { mode: 0o755 });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  action:\n    js:\n      bin: "${wfWrapper} {0}"\ntasks:\n  t:\n    defaults:\n      action:\n        js:\n          bin: "${taskWrapper} {0}"\n    steps:\n      - uses: ./echo.action\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('__task_bin__');
+      expect(stderr).not.toContain('__wf_bin__');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('step bin: overrides task and workflow defaults', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'echo.action.cjs'),
+        `module.exports.action = () => { console.error('ran'); return {}; };`,
+      );
+      const wfWrapper = join(dir, 'wf-wrapper.sh');
+      const taskWrapper = join(dir, 'task-wrapper.sh');
+      const stepWrapper = join(dir, 'step-wrapper.sh');
+      writeFileSync(wfWrapper, wrapperScript('__wf_bin__'), { mode: 0o755 });
+      writeFileSync(taskWrapper, wrapperScript('__task_bin__'), { mode: 0o755 });
+      writeFileSync(stepWrapper, wrapperScript('__step_bin__'), { mode: 0o755 });
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `defaults:\n  action:\n    js:\n      bin: "${wfWrapper} {0}"\ntasks:\n  t:\n    defaults:\n      action:\n        js:\n          bin: "${taskWrapper} {0}"\n    steps:\n      - uses: ./echo.action\n        bin: "${stepWrapper} {0}"\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).toBe(0);
+      expect(stderr).toContain('__step_bin__');
+      expect(stderr).not.toContain('__task_bin__');
+      expect(stderr).not.toContain('__wf_bin__');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('bin: referencing a missing runtime fails with a clear error', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'echo.action.cjs'), `module.exports.action = () => ({});`);
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  t:\n    steps:\n      - uses: ./echo.action\n        bin: "zorb-no-such-runtime-xyz {0}"\n`,
+      );
+      const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toContain('zorb-no-such-runtime-xyz');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('subsequent setSecret for the same name warns and keeps the first value', async () => {
     const { dir, cleanup } = tmp();
     try {

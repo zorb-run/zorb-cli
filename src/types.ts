@@ -18,8 +18,19 @@ export interface RunDefaults {
   env?: EnvMap;
 }
 
+export interface ActionRuntimeDefaults {
+  /** CLI template for invoking the runner script. {0} is the runner script path. */
+  bin?: string;
+}
+
+export interface ActionDefaults {
+  js?: ActionRuntimeDefaults;
+  py?: ActionRuntimeDefaults;
+}
+
 export interface Defaults {
   run?: RunDefaults;
+  action?: ActionDefaults;
 }
 
 export interface Docker {
@@ -48,6 +59,8 @@ export interface ShellStep extends BaseStep {
 export interface ActionStep extends BaseStep {
   uses: string;
   with?: WithMap;
+  /** Override the runtime-launch template for this step. {0} = runner script path. */
+  bin?: string;
 }
 
 export type Step = ShellStep | ActionStep;

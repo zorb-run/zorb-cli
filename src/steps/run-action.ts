@@ -25,7 +25,15 @@ export interface ExecuteActionOptions {
   inputs: Record<string, unknown>;
   context: ActionContextInfo;
   env: Record<string, string>;
+  /** Resolved bin template (validator guarantees a non-empty string containing {0}). */
+  bin: string;
 }
+
+/** Built-in defaults used when no defaults.action.{lang}.bin and no step bin: is set. */
+export const DEFAULT_BINS: Record<'js' | 'py', string> = {
+  js: 'bun {0}',
+  py: 'python3 {0}',
+};
 
 // src/steps/run-action.ts → ../../runners/. When packaged into a single binary
 // (A16) we'll resolve runners from the binary's adjacent libexec; for now this
@@ -40,7 +48,7 @@ export async function executeActionStep(opts: ExecuteActionOptions): Promise<Act
   writeFileSync(inputFile, JSON.stringify({ inputs: opts.inputs, context: opts.context }));
 
   try {
-    const cmd = buildRunnerCommand(opts.resolved, inputFile, resultFile);
+    const cmd = buildRunnerCommand(opts.resolved, opts.bin, inputFile, resultFile);
     const proc = Bun.spawn({
       cmd,
       env: opts.env,
@@ -88,25 +96,34 @@ function parseResultFile(resultFile: string): ActionResult {
   };
 }
 
-function buildRunnerCommand(resolved: ResolvedAction, inputFile: string, resultFile: string): string[] {
-  if (resolved.language === 'py') {
-    return [pythonBin(), join(RUNNERS_DIR, 'runner.py'), resolved.path, inputFile, resultFile];
+function buildRunnerCommand(resolved: ResolvedAction, bin: string, inputFile: string, resultFile: string): string[] {
+  const runnerScript = join(RUNNERS_DIR, resolved.language === 'py' ? 'runner.py' : 'runner.cjs');
+  const argv = renderBinTemplate(bin, runnerScript);
+  if (argv.length === 0) {
+    throw new ActionRunError(`bin template produced no command: '${bin}'`);
   }
-  return [pickJsRuntime(resolved), join(RUNNERS_DIR, 'runner.cjs'), resolved.path, inputFile, resultFile];
+  argv[0] = resolveExecutable(argv[0]!);
+  return [...argv, resolved.path, inputFile, resultFile];
 }
 
-// ...
+// Whitespace-split the template, then substitute {0} = runner script path.
+// Complex shell quoting isn't supported — the template is a simple argv
+// recipe, not a shell command.
+function renderBinTemplate(template: string, runnerScript: string): string[] {
+  return template
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.replace(/\{0\}/g, runnerScript));
+}
 
-function pythonBin(): string {
-  const bin = process.env.PYTHON ?? 'python3';
-
-  // If the user provided an explicit path, trust it.
-  if (bin.includes('/') || bin.includes('\\')) return bin;
-
-  const found = Bun.which(bin);
-  if (found) return found;
-
-  throw new ActionRunError(
-    `python executable not found: '${bin}'. Install python3 or set PYTHON=/absolute/path/to/python3`,
-  );
+// Pre-flight existence check so we error clearly when the runtime isn't
+// installed, instead of relying on the spawn ENOENT message. Absolute paths
+// (and paths containing a separator) are trusted as-is.
+function resolveExecutable(exe: string): string {
+  if (exe.includes('/') || exe.includes('\\')) return exe;
+  const found = Bun.which(exe);
+  if (!found) {
+    throw new ActionRunError(`runtime not found on PATH: '${exe}'. Install it or set bin: to an absolute path.`);
+  }
+  return found;
 }

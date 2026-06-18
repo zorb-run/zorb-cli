@@ -5,8 +5,8 @@ resolved before a step executes.
 
 ## Where expressions work
 
-Expressions are resolved in `env:` values at every scope (workflow, task, and step level). They also apply to
-`with:` inputs on `uses:` steps.
+Expressions are resolved in `env:` values at every scope (workflow, task, and step level). They also apply to `with:`
+inputs on `uses:` steps.
 
 ```yml
 tasks:
