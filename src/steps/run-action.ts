@@ -95,20 +95,18 @@ function buildRunnerCommand(resolved: ResolvedAction, inputFile: string, resultF
   return [pickJsRuntime(resolved), join(RUNNERS_DIR, 'runner.cjs'), resolved.path, inputFile, resultFile];
 }
 
-// Returns the binary used to invoke runner.cjs.
-//
-// In dev (`bun src/cli.ts`) process.execPath is Bun, which handles .js/.cjs/.mjs/.ts
-// natively, so we just reuse it. The bundled binary (A16) will be self-contained
-// Bun without any external runtime on PATH, so we need a fallback chain:
-//   .ts:  bun  → tsx  → ts-node  → error with install hint
-//   .js:  node → bun  → error
-// Wiring that up before the binary exists means writing speculative detection we
-// can't actually exercise, so it's deferred. See PLAN.md A8 ("TS execution: bun →
-// tsx → ts-node fallback chain (configurable)") and A16.
-function pickJsRuntime(_resolved: ResolvedAction): string {
-  return process.execPath;
-}
+// ...
 
 function pythonBin(): string {
-  return process.env.PYTHON ?? 'python3';
+  const bin = process.env.PYTHON ?? 'python3';
+
+  // If the user provided an explicit path, trust it.
+  if (bin.includes('/') || bin.includes('\\')) return bin;
+
+  const found = Bun.which(bin);
+  if (found) return found;
+
+  throw new ActionRunError(
+    `python executable not found: '${bin}'. Install python3 or set PYTHON=/absolute/path/to/python3`,
+  );
 }
