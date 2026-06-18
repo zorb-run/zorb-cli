@@ -92,12 +92,20 @@ function buildRunnerCommand(resolved: ResolvedAction, inputFile: string, resultF
   if (resolved.language === 'py') {
     return [pythonBin(), join(RUNNERS_DIR, 'runner.py'), resolved.path, inputFile, resultFile];
   }
-  return [jsRuntime(), join(RUNNERS_DIR, 'runner.cjs'), resolved.path, inputFile, resultFile];
+  return [pickJsRuntime(resolved), join(RUNNERS_DIR, 'runner.cjs'), resolved.path, inputFile, resultFile];
 }
 
-// process.execPath is the active runtime (bun in dev). We prefer it over a bare
-// 'bun' so subprocess tests don't depend on PATH lookup.
-function jsRuntime(): string {
+// Returns the binary used to invoke runner.cjs.
+//
+// In dev (`bun src/cli.ts`) process.execPath is Bun, which handles .js/.cjs/.mjs/.ts
+// natively, so we just reuse it. The bundled binary (A16) will be self-contained
+// Bun without any external runtime on PATH, so we need a fallback chain:
+//   .ts:  bun  → tsx  → ts-node  → error with install hint
+//   .js:  node → bun  → error
+// Wiring that up before the binary exists means writing speculative detection we
+// can't actually exercise, so it's deferred. See PLAN.md A8 ("TS execution: bun →
+// tsx → ts-node fallback chain (configurable)") and A16.
+function pickJsRuntime(_resolved: ResolvedAction): string {
   return process.execPath;
 }
 
