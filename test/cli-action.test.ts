@@ -289,7 +289,7 @@ tasks:
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  t:\n    steps:\n      - uses: ./nope.action\n`);
       const { exitCode, stderr } = await runCli(['run', 't'], { cwd: dir });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain(`must export an 'action' function`);
+      expect(stderr).toContain(`must export a 'action' function`);
     } finally {
       cleanup();
     }

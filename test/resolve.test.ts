@@ -1,22 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveAction, ResolveError, type ResolvedAction } from '../src/utils/resolve.ts';
+import { resolveAction, ResolveError } from '../src/utils/resolve.ts';
 
+// Bun on macOS hands out /var/folders/... but Node's createRequire returns
+// /private/var/folders/... (realpath). Normalise once so the two agree.
 function tmp(): { dir: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), 'zorb-resolve-'));
+  const raw = mkdtempSync(join(tmpdir(), 'zorb-resolve-'));
+  const dir = realpathSync(raw);
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
-}
-
-function asFile(r: ResolvedAction): { path: string; language: 'js' | 'py' } {
-  if (r.kind !== 'file') throw new Error(`expected file resolution, got ${r.kind}`);
-  return { path: r.path, language: r.language };
-}
-
-function asPackage(r: ResolvedAction): { spec: string; anchor: string } {
-  if (r.kind !== 'package') throw new Error(`expected package resolution, got ${r.kind}`);
-  return { spec: r.spec, anchor: r.anchor };
 }
 
 describe('resolveAction — local paths', () => {
@@ -24,7 +17,7 @@ describe('resolveAction — local paths', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'foo.js'), 'module.exports = {};');
-      const r = asFile(resolveAction({ uses: './foo.js', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './foo.js', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'foo.js'));
       expect(r.language).toBe('js');
     } finally {
@@ -36,7 +29,7 @@ describe('resolveAction — local paths', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'foo.py'), 'def action(i, c): return {}');
-      const r = asFile(resolveAction({ uses: './foo.py', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './foo.py', fromFile: join(dir, 'zorb.yml') });
       expect(r.language).toBe('py');
     } finally {
       cleanup();
@@ -47,7 +40,7 @@ describe('resolveAction — local paths', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'thing.ts'), 'export const action = () => ({});');
-      const r = asFile(resolveAction({ uses: './thing', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './thing', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'thing.ts'));
       expect(r.language).toBe('js');
     } finally {
@@ -60,7 +53,7 @@ describe('resolveAction — local paths', () => {
     try {
       mkdirSync(join(dir, 'scripts'));
       writeFileSync(join(dir, 'scripts', 'tag.action.cjs'), 'module.exports.action = () => ({});');
-      const r = asFile(resolveAction({ uses: './scripts/tag.action', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './scripts/tag.action', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'scripts', 'tag.action.cjs'));
     } finally {
       cleanup();
@@ -72,7 +65,7 @@ describe('resolveAction — local paths', () => {
     try {
       writeFileSync(join(dir, 'thing.js'), '');
       writeFileSync(join(dir, 'thing.ts'), '');
-      const r = asFile(resolveAction({ uses: './thing', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './thing', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'thing.js'));
     } finally {
       cleanup();
@@ -84,7 +77,7 @@ describe('resolveAction — local paths', () => {
     try {
       const abs = join(dir, 'abs.js');
       writeFileSync(abs, '');
-      const r = asFile(resolveAction({ uses: abs, fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: abs, fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(abs);
     } finally {
       cleanup();
@@ -97,7 +90,7 @@ describe('resolveAction — local paths', () => {
       const sub = join(dir, 'sub');
       mkdirSync(sub);
       writeFileSync(join(dir, 'outer.js'), '');
-      const r = asFile(resolveAction({ uses: '../outer.js', fromFile: join(sub, 'zorb.yml') }));
+      const r = resolveAction({ uses: '../outer.js', fromFile: join(sub, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'outer.js'));
     } finally {
       cleanup();
@@ -106,33 +99,35 @@ describe('resolveAction — local paths', () => {
 });
 
 describe('resolveAction — npm packages', () => {
-  // resolve.ts only verifies the package exists; the runner uses Node's
-  // createRequire to handle the actual exports/conditions/wildcards lookup.
-  function stubPackage(root: string, name: string): void {
+  function writePackage(
+    root: string,
+    name: string,
+    pkgJson: Record<string, unknown>,
+    files: Record<string, string>,
+  ): string {
     const pkgDir = join(root, 'node_modules', name);
     mkdirSync(pkgDir, { recursive: true });
-    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name }));
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, ...pkgJson }));
+    for (const [rel, contents] of Object.entries(files)) {
+      const full = join(pkgDir, rel);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, contents);
+    }
+    return pkgDir;
   }
 
-  test('scoped spec returns kind=package with spec + anchor', () => {
+  test('resolves a scoped package via exports field', () => {
     const { dir, cleanup } = tmp();
     try {
-      stubPackage(dir, '@zorb/aws');
-      const r = asPackage(resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.spec).toBe('@zorb/aws/s3/sync');
-      expect(r.anchor).toBe(dir);
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('unscoped spec returns kind=package with spec + anchor', () => {
-    const { dir, cleanup } = tmp();
-    try {
-      stubPackage(dir, 'my-actions');
-      const r = asPackage(resolveAction({ uses: 'my-actions/check', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.spec).toBe('my-actions/check');
-      expect(r.anchor).toBe(dir);
+      writePackage(
+        dir,
+        '@zorb/aws',
+        { exports: { './s3/sync': './dist/s3/sync.js' } },
+        { 'dist/s3/sync.js': 'module.exports.action = () => ({});' },
+      );
+      const r = resolveAction({ uses: '@zorb/aws/s3/sync', fromFile: join(dir, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'dist', 's3', 'sync.js'));
+      expect(r.language).toBe('js');
     } finally {
       cleanup();
     }
@@ -141,12 +136,22 @@ describe('resolveAction — npm packages', () => {
   test('walks up parent directories to find node_modules', () => {
     const { dir, cleanup } = tmp();
     try {
-      stubPackage(dir, '@zorb/aws');
+      writePackage(dir, '@zorb/aws', { exports: { './check': './check.js' } }, { 'check.js': '' });
       const sub = join(dir, 'sub', 'deeper');
       mkdirSync(sub, { recursive: true });
-      const r = asPackage(resolveAction({ uses: '@zorb/aws/check', fromFile: join(sub, 'zorb.yml') }));
-      expect(r.spec).toBe('@zorb/aws/check');
-      expect(r.anchor).toBe(sub);
+      const r = resolveAction({ uses: '@zorb/aws/check', fromFile: join(sub, 'zorb.yml') });
+      expect(r.path).toBe(join(dir, 'node_modules', '@zorb/aws', 'check.js'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('language is derived from the resolved file extension', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writePackage(dir, 'py-pkg', { exports: { './check': './check.py' } }, { 'check.py': '' });
+      const r = resolveAction({ uses: 'py-pkg/check', fromFile: join(dir, 'zorb.yml') });
+      expect(r.language).toBe('py');
     } finally {
       cleanup();
     }
@@ -213,7 +218,7 @@ describe('resolveAction — errors', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb-helper.js'), '');
-      const r = asFile(resolveAction({ uses: './zorb-helper.js', fromFile: join(dir, 'zorb.yml') }));
+      const r = resolveAction({ uses: './zorb-helper.js', fromFile: join(dir, 'zorb.yml') });
       expect(r.path).toBe(join(dir, 'zorb-helper.js'));
     } finally {
       cleanup();

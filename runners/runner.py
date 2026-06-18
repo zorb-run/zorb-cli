@@ -2,7 +2,7 @@
 """zorb action runner — Python.
 
 Usage:
-    runner.py <action-file> <input-file> <result-file>
+    runner.py <action-file> <action-fn> <input-file> <result-file>
 
 Protocol mirrors runner.cjs. We keep the context attribute names in camelCase
 (setSecret / setEnv / taskName) so workflow authors see the same surface across
@@ -18,13 +18,13 @@ import traceback
 
 def main():
     argv = sys.argv
-    if len(argv) != 4:
+    if len(argv) != 5:
         sys.stderr.write(
-            "runner.py: expected <action-file> <input-file> <result-file>\n",
+            "runner.py: expected <action-file> <action-fn> <input-file> <result-file>\n",
         )
         sys.exit(2)
 
-    action_file, input_file, result_file = argv[1], argv[2], argv[3]
+    action_file, action_fn, input_file, result_file = argv[1], argv[2], argv[3], argv[4]
 
     try:
         with open(input_file, "r", encoding="utf-8") as f:
@@ -67,14 +67,14 @@ def main():
     ctx = _Context()
 
     try:
-        action_fn = _load_action(action_file)
+        fn = _load_action(action_file, action_fn)
     except Exception:
         sys.stderr.write("failed to load action:\n")
         sys.stderr.write(traceback.format_exc())
         sys.exit(1)
 
     try:
-        result = action_fn(inputs, ctx)
+        result = fn(inputs, ctx)
     except Exception:
         sys.stderr.write(f"action {os.path.basename(action_file)} raised:\n")
         sys.stderr.write(traceback.format_exc())
@@ -92,15 +92,15 @@ def main():
         sys.exit(2)
 
 
-def _load_action(file):
+def _load_action(file, fn_name):
     spec = importlib.util.spec_from_file_location("zorb_action", file)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot import action file: {file}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    fn = getattr(module, "action", None)
+    fn = getattr(module, fn_name, None)
     if not callable(fn):
-        raise RuntimeError(f"action file must define an 'action' function: {file}")
+        raise RuntimeError(f"action file must define a '{fn_name}' function: {file}")
     return fn
 
 

@@ -4,28 +4,24 @@
 // zorb action runner — Node.js / Bun.
 //
 // Usage:
-//   runner.cjs <action-target> <input-file> <result-file>
-//
-// <action-target> is either:
-//   - an absolute path to a local action file (.js/.cjs/.mjs/.ts), or
-//   - an NPM specifier (e.g. "@zorb/aws/s3/sync") — in which case input-file
-//     must carry a `package.anchor` field pointing at the directory whose
-//     node_modules the spec should be resolved against. Node's own
-//     createRequire then handles exports / conditions / wildcards.
+//   runner.cjs <action-file> <action-fn> <input-file> <result-file>
 //
 // Protocol:
-//   input-file (in):  {"inputs": {...}, "context": {...}, "package"?: {"anchor": "..."}}
+//   input-file (in):  {"inputs": {...}, "context": {"cwd": "...", "taskName": "..."}}
 //   result-file (out): {"outputs": {...}, "secrets": [{"name","value"}, ...], "env": [...]}
+//
+// The action module is loaded via dynamic import (supports .js/.cjs/.mjs/.ts under Bun)
+// with a CommonJS require() fallback for legacy .cjs/.js shapes that don't expose
+// a CJS-friendly module record through dynamic import.
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
 
 async function main() {
-  const [, , actionTarget, inputFile, resultFile] = process.argv;
-  if (!actionTarget || !inputFile || !resultFile) {
-    process.stderr.write('runner.cjs: expected <action-target> <input-file> <result-file>\n');
+  const [, , actionFile, actionFn, inputFile, resultFile] = process.argv;
+  if (!actionFile || !actionFn || !inputFile || !resultFile) {
+    process.stderr.write('runner.cjs: expected <action-file> <action-fn> <input-file> <result-file>\n');
     process.exit(2);
   }
 
@@ -67,24 +63,20 @@ async function main() {
     },
   };
 
-  const pkgInfo = payload.package;
-  let actionFn;
+  let fn;
   try {
-    actionFn = pkgInfo && pkgInfo.anchor
-      ? await loadPackageAction(actionTarget, pkgInfo.anchor)
-      : await loadAction(actionTarget);
+    fn = await loadActionFn(actionFile, actionFn);
   } catch (err) {
     process.stderr.write('failed to load action:\n');
     process.stderr.write(formatErr(err) + '\n');
     process.exit(1);
   }
 
-  const actionLabel = pkgInfo && pkgInfo.anchor ? actionTarget : path.basename(actionTarget);
   let result;
   try {
-    result = await actionFn(inputs, context);
+    result = await fn(inputs, context);
   } catch (err) {
-    process.stderr.write(`action ${actionLabel} threw:\n`);
+    process.stderr.write(`action ${path.basename(actionFile)} threw:\n`);
     process.stderr.write(formatErr(err) + '\n');
     process.exit(1);
   }
@@ -101,7 +93,7 @@ async function main() {
   process.exit(0);
 }
 
-async function loadAction(file) {
+async function loadActionFn(file, fnName) {
   let mod;
   try {
     mod = await import(pathToFileURL(file).href);
@@ -118,35 +110,25 @@ async function loadAction(file) {
       throw importErr;
     }
   }
-  const fn = pickActionExport(mod);
+  const fn = pickExport(mod, fnName);
   if (typeof fn !== 'function') {
-    throw new Error(`action file must export an 'action' function: ${file}`);
+    throw new Error(`action file must export a '${fnName}' function: ${file}`);
   }
   return fn;
 }
 
-// Resolve an NPM spec via the user's project, then load the resulting file
-// the same way as a local action. createRequire just needs a path to anchor
-// — the file at that path doesn't need to exist.
-async function loadPackageAction(spec, anchor) {
-  const userRequire = createRequire(path.join(anchor, 'noop.js'));
-  let resolvedPath;
-  try {
-    resolvedPath = userRequire.resolve(spec);
-  } catch (err) {
-    throw new Error(`failed to resolve '${spec}' from '${anchor}': ${err && err.message}`);
-  }
-  return loadAction(resolvedPath);
-}
-
-function pickActionExport(mod) {
+function pickExport(mod, fnName) {
   if (!mod) return undefined;
-  if (typeof mod.action === 'function') return mod.action;
-  // ESM default export wrapping a CJS module: { default: { action } }
-  if (mod.default && typeof mod.default.action === 'function') return mod.default.action;
-  // module.exports = function action(inputs, context) {}
-  if (typeof mod === 'function') return mod;
-  if (typeof mod.default === 'function') return mod.default;
+  if (typeof mod[fnName] === 'function') return mod[fnName];
+  // ESM default export wrapping a CJS module: { default: { [fnName] } }
+  if (mod.default && typeof mod.default[fnName] === 'function') return mod.default[fnName];
+  // module.exports = function (inputs, context) {}  — only honoured for the
+  // default 'action' name, since picking up an anonymous default for a named
+  // request would be surprising.
+  if (fnName === 'action') {
+    if (typeof mod === 'function') return mod;
+    if (typeof mod.default === 'function') return mod.default;
+  }
   return undefined;
 }
 

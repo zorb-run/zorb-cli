@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, parse, resolve as resolvePath } from 'node:path';
 
 export class ResolveError extends Error {
@@ -13,14 +14,10 @@ export class ResolveError extends Error {
 
 export type ActionLanguage = 'js' | 'py';
 
-/**
- * Either a concrete file (local action) or an NPM spec the runner will
- * resolve via Node's own algorithm. NPM specs are always JS — Python packages
- * aren't in scope; `.py` actions are always local files.
- */
-export type ResolvedAction =
-  | { kind: 'file'; path: string; language: ActionLanguage }
-  | { kind: 'package'; spec: string; anchor: string };
+export interface ResolvedAction {
+  path: string;
+  language: ActionLanguage;
+}
 
 export const ACTION_EXTENSIONS: readonly string[] = ['.js', '.cjs', '.mjs', '.ts', '.py'];
 
@@ -55,7 +52,7 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
   const exactExt = extensionOf(absolute);
   if (exactExt && ACTION_EXTENSIONS.includes(exactExt)) {
     if (existsAsFile(absolute)) {
-      return { kind: 'file', path: absolute, language: languageFor(exactExt) };
+      return { path: absolute, language: languageFor(exactExt) };
     }
     throw new ResolveError(`action file does not exist: ${absolute}`);
   }
@@ -66,7 +63,7 @@ export function resolveAction({ uses, fromFile }: ResolveOptions): ResolvedActio
     const candidate = absolute + ext;
     tried.push(candidate);
     if (existsAsFile(candidate)) {
-      return { kind: 'file', path: candidate, language: languageFor(ext) };
+      return { path: candidate, language: languageFor(ext) };
     }
   }
 
@@ -95,16 +92,25 @@ function parseNpmSpec(uses: string): NpmSpec {
   return { pkg: uses.slice(0, firstSlash), subpath: uses.slice(firstSlash + 1) };
 }
 
-// We do a fast existence check on the package's node_modules entry so we can
-// emit a clean `npm install @zorb/aws` hint before spawning the runner.
-// Beyond that, the runner uses Node's createRequire to resolve the actual
-// file — that gives us exports, conditions, and wildcards for free.
+// We fast-fail on a missing package so we can emit a clean install hint;
+// past that, Node's createRequire handles the real resolution (exports,
+// conditions, wildcards) and we just inspect the returned file.
 function resolveNpmAction(uses: string, fromFile: string): ResolvedAction {
   const spec = parseNpmSpec(uses);
   const anchor = dirname(fromFile);
-  const pkgDir = findPackageDir(spec.pkg, anchor);
-  if (!pkgDir) throw missingPackageError(spec.pkg);
-  return { kind: 'package', spec: uses, anchor };
+  if (!findPackageDir(spec.pkg, anchor)) throw missingPackageError(spec.pkg);
+
+  // createRequire just needs a path to anchor — the file doesn't need to exist.
+  const userRequire = createRequire(join(anchor, 'noop.js'));
+  let resolved: string;
+  try {
+    resolved = userRequire.resolve(uses);
+  } catch (err) {
+    throw new ResolveError(`could not resolve '${uses}': ${(err as Error).message}`);
+  }
+  const ext = extensionOf(resolved);
+  const language = ext && ACTION_EXTENSIONS.includes(ext) ? languageFor(ext) : 'js';
+  return { path: resolved, language };
 }
 
 function findPackageDir(pkg: string, fromDir: string): string | undefined {

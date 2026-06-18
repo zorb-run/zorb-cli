@@ -22,6 +22,8 @@ export interface ActionResult {
 
 export interface ExecuteActionOptions {
   resolved: ResolvedAction;
+  /** Named export the runner should invoke; defaults to 'action'. */
+  actionFn: string;
   inputs: Record<string, unknown>;
   context: ActionContextInfo;
   env: Record<string, string>;
@@ -45,14 +47,10 @@ export async function executeActionStep(opts: ExecuteActionOptions): Promise<Act
   const inputFile = join(dir, 'input.json');
   const resultFile = join(dir, 'result.json');
 
-  const payload: Record<string, unknown> = { inputs: opts.inputs, context: opts.context };
-  if (opts.resolved.kind === 'package') {
-    payload.package = { anchor: opts.resolved.anchor };
-  }
-  writeFileSync(inputFile, JSON.stringify(payload));
+  writeFileSync(inputFile, JSON.stringify({ inputs: opts.inputs, context: opts.context }));
 
   try {
-    const cmd = buildRunnerCommand(opts.resolved, opts.bin, inputFile, resultFile);
+    const cmd = buildRunnerCommand(opts.resolved, opts.actionFn, opts.bin, inputFile, resultFile);
     const proc = Bun.spawn({
       cmd,
       env: opts.env,
@@ -100,16 +98,20 @@ function parseResultFile(resultFile: string): ActionResult {
   };
 }
 
-function buildRunnerCommand(resolved: ResolvedAction, bin: string, inputFile: string, resultFile: string): string[] {
-  const language = resolved.kind === 'package' ? 'js' : resolved.language;
-  const runnerScript = join(RUNNERS_DIR, language === 'py' ? 'runner.py' : 'runner.cjs');
+function buildRunnerCommand(
+  resolved: ResolvedAction,
+  actionFn: string,
+  bin: string,
+  inputFile: string,
+  resultFile: string,
+): string[] {
+  const runnerScript = join(RUNNERS_DIR, resolved.language === 'py' ? 'runner.py' : 'runner.cjs');
   const argv = renderBinTemplate(bin, runnerScript);
   if (argv.length === 0) {
     throw new ActionRunError(`bin template produced no command: '${bin}'`);
   }
   argv[0] = resolveExecutable(argv[0]!);
-  const target = resolved.kind === 'package' ? resolved.spec : resolved.path;
-  return [...argv, target, inputFile, resultFile];
+  return [...argv, resolved.path, actionFn, inputFile, resultFile];
 }
 
 // Whitespace-split the template, then substitute {0} = runner script path.
