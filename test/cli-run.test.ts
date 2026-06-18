@@ -364,13 +364,15 @@ tasks:
   test('workflow defaults.run.shell sets the default shell', async () => {
     const { dir, cleanup } = tmp();
     try {
+      const wrapper = join(dir, 'shell-wrapper.sh');
+      writeFileSync(wrapper, `#!/bin/sh\necho "__wf_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
       writeFileSync(
         join(dir, 'zorb.yml'),
-        `defaults:\n  run:\n    shell: /bin/sh\ntasks:\n  s:\n    steps:\n      - run: echo $0\n`,
+        `defaults:\n  run:\n    shell: "${wrapper}"\ntasks:\n  s:\n    steps:\n      - run: echo ok\n`,
       );
       const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('/bin/sh');
+      expect(stdout).toContain('__wf_shell__');
     } finally {
       cleanup();
     }
@@ -379,14 +381,18 @@ tasks:
   test('task defaults.run.shell overrides workflow defaults', async () => {
     const { dir, cleanup } = tmp();
     try {
+      const wfWrapper = join(dir, 'wf-shell-wrapper.sh');
+      const taskWrapper = join(dir, 'task-shell-wrapper.sh');
+      writeFileSync(wfWrapper, `#!/bin/sh\necho "__wf_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
+      writeFileSync(taskWrapper, `#!/bin/sh\necho "__task_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
       writeFileSync(
         join(dir, 'zorb.yml'),
-        `defaults:\n  run:\n    shell: /bin/bash\ntasks:\n  s:\n    defaults:\n      run:\n        shell: /bin/sh\n    steps:\n      - run: echo $0\n`,
+        `defaults:\n  run:\n    shell: "${wfWrapper}"\ntasks:\n  s:\n    defaults:\n      run:\n        shell: "${taskWrapper}"\n    steps:\n      - run: echo ok\n`,
       );
       const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('/bin/sh');
-      expect(stdout).not.toContain('/bin/bash');
+      expect(stdout).toContain('__task_shell__');
+      expect(stdout).not.toContain('__wf_shell__');
     } finally {
       cleanup();
     }
@@ -395,13 +401,21 @@ tasks:
   test('step shell overrides defaults at every scope', async () => {
     const { dir, cleanup } = tmp();
     try {
+      const wfWrapper = join(dir, 'wf-shell-wrapper.sh');
+      const taskWrapper = join(dir, 'task-shell-wrapper.sh');
+      const stepWrapper = join(dir, 'step-shell-wrapper.sh');
+      writeFileSync(wfWrapper, `#!/bin/sh\necho "__wf_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
+      writeFileSync(taskWrapper, `#!/bin/sh\necho "__task_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
+      writeFileSync(stepWrapper, `#!/bin/sh\necho "__step_shell__"\nexec /bin/sh "$@"\n`, { mode: 0o755 });
       writeFileSync(
         join(dir, 'zorb.yml'),
-        `defaults:\n  run:\n    shell: /bin/bash\ntasks:\n  s:\n    defaults:\n      run:\n        shell: /bin/bash\n    steps:\n      - shell: /bin/sh\n        run: echo $0\n`,
+        `defaults:\n  run:\n    shell: "${wfWrapper}"\ntasks:\n  s:\n    defaults:\n      run:\n        shell: "${taskWrapper}"\n    steps:\n      - shell: "${stepWrapper}"\n        run: echo ok\n`,
       );
       const { exitCode, stdout } = await runCli(['run', 's'], { cwd: dir });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('/bin/sh');
+      expect(stdout).toContain('__step_shell__');
+      expect(stdout).not.toContain('__task_shell__');
+      expect(stdout).not.toContain('__wf_shell__');
     } finally {
       cleanup();
     }

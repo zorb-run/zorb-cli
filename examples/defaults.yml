@@ -5,7 +5,7 @@
 # applies to uses: steps.
 #
 # Precedence (lowest → highest):
-#   step value  >  task defaults  >  workflow defaults  >  built-in fallback
+#   built-in fallback  <  workflow defaults  <  task defaults  <  step value
 #
 # For env vars specifically, defaults are the floor at each scope —
 # explicit env: at the same scope wins:
