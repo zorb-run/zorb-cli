@@ -27,9 +27,9 @@ tasks:
         docker:
           image: node:20-alpine
           volumes:
-            - "./src:/app/src"
-            - "./package.json:/app/package.json"
-            - "./package-lock.json:/app/package-lock.json"
+            - './src:/app/src'
+            - './package.json:/app/package.json'
+            - './package-lock.json:/app/package-lock.json'
           workdir: /app
           platform: linux/amd64
           pull: if-not-present
@@ -47,5 +47,5 @@ tasks:
           image: curlimages/curl:latest
           network: host
         env:
-          CURL_TIMEOUT: "30"
+          CURL_TIMEOUT: '30'
         run: curl --fail --max-time "$CURL_TIMEOUT" http://localhost:3000/health

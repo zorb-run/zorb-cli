@@ -1,6 +1,7 @@
 export class RunContext {
   private readonly _secrets = new Map<string, string>();
   private readonly _dynamicEnv = new Map<string, string>();
+  private readonly _stepOutputs = new Map<string, Record<string, unknown>>();
 
   setSecret(name: string, value: string): boolean {
     if (this._secrets.has(name)) return false;
@@ -22,6 +23,14 @@ export class RunContext {
 
   getDynamicEnv(): Record<string, string> {
     return Object.fromEntries(this._dynamicEnv);
+  }
+
+  setStepOutputs(stepId: string, outputs: Record<string, unknown>): void {
+    this._stepOutputs.set(stepId, outputs);
+  }
+
+  getStepOutputs(stepId: string): Record<string, unknown> | undefined {
+    return this._stepOutputs.get(stepId);
   }
 
   get hasSecrets(): boolean {

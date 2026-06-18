@@ -20,7 +20,10 @@ export interface Colors extends Record<Code, Painter> {
 }
 
 export function createColors(enabled: boolean): Colors {
-  const paint = (code: string): Painter => (s) => (enabled ? `${code}${s}${RESET}` : s);
+  const paint =
+    (code: string): Painter =>
+    (s) =>
+      enabled ? `${code}${s}${RESET}` : s;
   const out = { enabled } as Colors;
   for (const key of Object.keys(CODES) as Code[]) {
     out[key] = paint(CODES[key]);

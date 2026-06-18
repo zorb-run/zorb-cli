@@ -63,11 +63,7 @@
     "with": {
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          { "type": "string" },
-          { "type": "number" },
-          { "type": "boolean" }
-        ]
+        "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
       },
       "description": "Key-value map of inputs passed to an action"
     },
@@ -146,21 +142,14 @@
         },
         "default": {
           "description": "Default value if not provided",
-          "oneOf": [
-            { "type": "string" },
-            { "type": "number" },
-            { "type": "boolean" }
-          ]
+          "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
         }
       }
     },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "oneOf": [
-        { "required": ["run"] },
-        { "required": ["uses"] }
-      ],
+      "oneOf": [{ "required": ["run"] }, { "required": ["uses"] }],
       "properties": {
         "id": {
           "description": "Unique identifier for this step, used to reference outputs in expressions",

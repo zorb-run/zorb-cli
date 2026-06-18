@@ -2,17 +2,38 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
 import { loadWorkflow, type LoadOptions } from '../config.ts';
 import { RunContext } from '../context.ts';
-import { interpolateMap } from '../expressions.ts';
+import { interpolateMap, interpolateWith } from '../expressions.ts';
 import { parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
-import { isActionStep, isShellStep, type EnvMap, type Input, type Step, type WithValue } from '../types.ts';
+import { DEFAULT_BINS, executeActionStep } from '../steps/run-action.ts';
+import {
+  isActionStep,
+  isShellStep,
+  type ActionDefaults,
+  type ActionStep,
+  type EnvMap,
+  type Input,
+  type Step,
+  type WithMap,
+  type WithValue,
+} from '../types.ts';
+import { resolveAction, ResolveError, type ResolvedAction } from '../utils/resolve.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
   colors: Colors;
   taskName: string;
   withPairs: string[];
+  /**
+   * Env vars collected from --env-file and -e/--env. Kept separate from
+   * process.env so action subprocesses can be given a declaration-only
+   * environment (no leak of the developer's shell exports). -e overrides
+   * --env-file (the cli.ts layer handles that). Shell steps merge this with
+   * process.env; actions see only this map plus workflow/task/step env: and
+   * dynamic env from setEnv.
+   */
+  inlineEnv?: Record<string, string>;
 }
 
 export async function runRun({
@@ -22,6 +43,7 @@ export async function runRun({
   file,
   cwd,
   withPairs,
+  inlineEnv = {},
 }: RunOptions): Promise<number> {
   const { workflow, path } = loadWorkflow({ file, cwd });
 
@@ -51,28 +73,46 @@ export async function runRun({
 
   const runCtx = new RunContext();
 
-  // Execute the secrets block sequentially before any task step.
-  const secretsSteps = workflow.secrets ?? [];
-  if (secretsSteps.length > 0) {
-    log.verbose(`executing ${secretsSteps.length} secret(s) step(s)`);
-    for (let i = 0; i < secretsSteps.length; i++) {
-      const step = secretsSteps[i]!;
-      log.info(colors.gray(`> Secret ${i + 1}/${secretsSteps.length}: ${step.uses}`));
-      // Action runners arrive in A8.
-      log.error(`uses: steps are not yet supported`);
-      log.hint(`local + NPM action runners arrive in A8`);
-      log.hint(`step: ${step.uses}`);
-      return 1;
-    }
-  }
-
   const procEnv: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) procEnv[k] = v;
   }
-  const secretsSnap = () => runCtx.getSecretsSnapshot();
+  // Shell env base = process.env + inline (-e / --env-file).
+  // Action env base = inline only (no process.env — strict declarations-only).
+  const shellEnvBase: Record<string, string> = Object.assign(Object.create(null), procEnv, inlineEnv);
+  const actionEnvBase: Record<string, string> = Object.assign(Object.create(null), inlineEnv);
 
+  const secretsSnap = () => runCtx.getSecretsSnapshot();
   const defaultCwd = dirname(path);
+
+  // Secrets block — actions only, executed before task steps. taskName is
+  // already resolved so loaders can use it in log messages.
+  const secretsSteps = workflow.secrets ?? [];
+  if (secretsSteps.length > 0) {
+    log.verbose(`executing ${secretsSteps.length} secrets step(s)`);
+    for (let i = 0; i < secretsSteps.length; i++) {
+      const step = secretsSteps[i]!;
+      log.info(colors.gray(`> Secret ${i + 1}/${secretsSteps.length}: ${step.uses}`));
+
+      const code = await runActionStep({
+        step,
+        workflow,
+        task: undefined,
+        inputs,
+        runCtx,
+        actionEnvBase,
+        workflowPath: path,
+        defaultCwd,
+        taskName,
+        log,
+      });
+      if (code !== 0) {
+        log.error(`secrets step ${i + 1}/${secretsSteps.length} failed with exit code ${code}`);
+        return code;
+      }
+    }
+  }
+
   const total = task.steps.length;
 
   for (let i = 0; i < total; i++) {
@@ -81,16 +121,27 @@ export async function runRun({
     log.info(colors.gray(`> Step ${i + 1}/${total}: ${label}`));
 
     if (isActionStep(step)) {
-      log.error(`uses: steps are not yet supported`);
-      log.hint(`local + NPM action runners arrive in A8`);
-      log.hint(`step: ${step.uses}`);
-      return 1;
+      const code = await runActionStep({
+        step,
+        workflow,
+        task,
+        inputs,
+        runCtx,
+        actionEnvBase,
+        workflowPath: path,
+        defaultCwd,
+        taskName,
+        log,
+      });
+      if (code !== 0) {
+        log.error(`step ${i + 1}/${total} failed with exit code ${code}`);
+        return code;
+      }
+      continue;
     }
 
-    // Env layers, lowest → highest. `defaults.run.env` is the floor at each
-    // scope: explicit `env:` at the same scope wins. Each layer is interpolated
-    // against the accumulated env so later layers can reference earlier ones.
-    const acc: Record<string, string> = Object.assign(Object.create(null), procEnv);
+    // Shell step — process.env + inline + workflow/task/step env.
+    const acc: Record<string, string> = Object.assign(Object.create(null), shellEnvBase);
     const layer = (m: EnvMap | undefined) => {
       if (!m) return;
       Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap() }));
@@ -100,9 +151,7 @@ export async function runRun({
     layer(task.defaults?.run?.env);
     layer(task.env);
     Object.assign(acc, runCtx.getDynamicEnv());
-    const stepEnv = step.env
-      ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap() })
-      : {};
+    const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap() }) : {};
     const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
 
     const stepShell = step.shell ?? task.defaults?.run?.shell ?? workflow.defaults?.run?.shell;
@@ -130,8 +179,103 @@ export async function runRun({
   return 0;
 }
 
+interface RunActionArgs {
+  step: ActionStep;
+  workflow: { defaults?: { action?: ActionDefaults }; env?: EnvMap };
+  task: { defaults?: { action?: ActionDefaults }; env?: EnvMap } | undefined;
+  inputs: Record<string, WithValue>;
+  runCtx: RunContext;
+  actionEnvBase: Record<string, string>;
+  workflowPath: string;
+  defaultCwd: string;
+  taskName: string;
+  log: Logger;
+}
+
+async function runActionStep(args: RunActionArgs): Promise<number> {
+  const { step, workflow, task, inputs, runCtx, actionEnvBase, workflowPath, defaultCwd, taskName, log } = args;
+
+  let resolved;
+  try {
+    resolved = resolveAction({ uses: step.uses, fromFile: workflowPath });
+  } catch (e) {
+    if (e instanceof ResolveError) {
+      log.error(e.message);
+      if (e.hint) log.hint(e.hint);
+      return 1;
+    }
+    throw e;
+  }
+
+  const secretsSnap = runCtx.getSecretsSnapshot();
+
+  // Action env stack: inline (-e / --env-file) → workflow.env → task.env →
+  // dynamic (setEnv) → step.env. Notably absent: process.env (the user's shell
+  // exports do not leak into actions) and defaults.run.env (those are the
+  // floor for `run:` steps, not for actions).
+  const acc: Record<string, string> = Object.assign(Object.create(null), actionEnvBase);
+  const layer = (m: EnvMap | undefined) => {
+    if (!m) return;
+    Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap }));
+  };
+  layer(workflow.env);
+  if (task) layer(task.env);
+  Object.assign(acc, runCtx.getDynamicEnv());
+  const stepEnv = step.env ? interpolateMap(step.env, { inputs, env: { ...acc }, secrets: secretsSnap }) : {};
+  const effectiveEnv: Record<string, string> = Object.assign(acc, stepEnv);
+
+  const withMap: WithMap = step.with
+    ? interpolateWith(step.with, { inputs, env: effectiveEnv, secrets: secretsSnap })
+    : {};
+
+  const bin = resolveActionBin(resolved, step, task, workflow);
+
+  log.debug(`  action: ${resolved.path} (${resolved.language})`);
+  log.debug(`  bin:    ${bin}`);
+  if (Object.keys(withMap).length > 0) log.debug(`  with:`, withMap);
+  if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
+
+  const result = await executeActionStep({
+    resolved,
+    inputs: withMap,
+    context: { cwd: defaultCwd, taskName, stepId: step.id },
+    env: effectiveEnv,
+    bin,
+  });
+
+  if (result.exitCode !== 0) return result.exitCode;
+
+  for (const { name, value } of result.secrets) {
+    const accepted = runCtx.setSecret(name, value);
+    if (!accepted) log.warn(`secret '${name}' was already registered — keeping the first value`);
+  }
+  for (const { name, value } of result.env) {
+    runCtx.setEnv(name, value);
+  }
+  if (step.id) runCtx.setStepOutputs(step.id, result.outputs);
+
+  return 0;
+}
+
 function resolvePath(base: string, p: string): string {
   return isAbsolute(p) ? p : resolve(base, p);
+}
+
+// Precedence: step.bin → task.defaults.action[lang].bin → workflow.defaults.action[lang].bin
+// → built-in default (DEFAULT_BINS). Validator guarantees any user-supplied
+// template is non-empty and contains '{0}'.
+function resolveActionBin(
+  resolved: ResolvedAction,
+  step: ActionStep,
+  task: { defaults?: { action?: ActionDefaults } } | undefined,
+  workflow: { defaults?: { action?: ActionDefaults } },
+): string {
+  if (step.bin) return step.bin;
+  const taskBin = task?.defaults?.action?.[resolved.language]?.bin;
+  if (taskBin) return taskBin;
+  const wfBin = workflow.defaults?.action?.[resolved.language]?.bin;
+  if (wfBin) return wfBin;
+  return DEFAULT_BINS[resolved.language];
 }
 
 function stepLabel(step: Step): string {
@@ -162,11 +306,12 @@ function printInputs(
   log.info(`  ${colors.bold('Inputs')}:`);
   const width = Math.max(...keys.map((k) => k.length));
   for (const name of keys) {
-    const tag = name in provided
-      ? colors.gray('(provided)')
-      : defs?.[name]?.default !== undefined
-        ? colors.gray('(default)')
-        : colors.gray('(unknown)');
+    const tag =
+      name in provided
+        ? colors.gray('(provided)')
+        : defs?.[name]?.default !== undefined
+          ? colors.gray('(default)')
+          : colors.gray('(unknown)');
     log.info(`    ${colors.yellow(name.padEnd(width))} = ${formatValue(resolved[name]!)}  ${tag}`);
   }
 }

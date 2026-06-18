@@ -33,10 +33,7 @@ async function runCli(
     stderr: 'pipe',
   });
 
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
   return { exitCode: proc.exitCode ?? -1, stdout, stderr };
 }
@@ -159,10 +156,9 @@ describe('--env-file', () => {
     try {
       writeFileSync(join(dir, '.env'), 'ZORB_A=1\nZORB_B=2\n');
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'build', '--env-file', join(dir, '.env'), '--verbose'],
-        { cwd: dir },
-      );
+      const { exitCode, stderr } = await runCli(['run', 'build', '--env-file', join(dir, '.env'), '--verbose'], {
+        cwd: dir,
+      });
       expect(exitCode).toBe(0);
       expect(stderr).toContain('loaded 2 env var(s)');
     } finally {
@@ -176,10 +172,9 @@ describe('-e / --env inline env vars', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'build', '-e', 'ZORB_A=one', '-e', 'ZORB_B=two', '--verbose'],
-        { cwd: dir },
-      );
+      const { exitCode, stderr } = await runCli(['run', 'build', '-e', 'ZORB_A=one', '-e', 'ZORB_B=two', '--verbose'], {
+        cwd: dir,
+      });
       expect(exitCode).toBe(0);
       expect(stderr).toContain('set 2 inline env var(s)');
     } finally {
@@ -191,10 +186,7 @@ describe('-e / --env inline env vars', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  build:\n    steps:\n      - run: 'true'\n`);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'build', '--env', 'ZORB_X=y', '--verbose'],
-        { cwd: dir },
-      );
+      const { exitCode, stderr } = await runCli(['run', 'build', '--env', 'ZORB_X=y', '--verbose'], { cwd: dir });
       expect(exitCode).toBe(0);
       expect(stderr).toContain('set 1 inline env var(s)');
     } finally {

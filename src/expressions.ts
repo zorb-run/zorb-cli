@@ -16,11 +16,22 @@ export interface InterpolationContext {
 // ─── Tokenizer ───────────────────────────────────────────────────────────────
 
 type TT =
-  | 'STR' | 'NUM' | 'BOOL' | 'IDENT'
-  | 'DOT' | 'PIPE'
-  | 'EQEQ' | 'NEQ' | 'AND' | 'OR' | 'BANG'
-  | 'QMARK' | 'COLON'
-  | 'LP' | 'RP' | 'COMMA'
+  | 'STR'
+  | 'NUM'
+  | 'BOOL'
+  | 'IDENT'
+  | 'DOT'
+  | 'PIPE'
+  | 'EQEQ'
+  | 'NEQ'
+  | 'AND'
+  | 'OR'
+  | 'BANG'
+  | 'QMARK'
+  | 'COLON'
+  | 'LP'
+  | 'RP'
+  | 'COMMA'
   | 'EOF';
 
 interface Tok {
@@ -46,8 +57,10 @@ function tokenize(src: string): Tok[] {
       let s = '';
       i++;
       while (i < src.length && src[i] !== q) {
-        if (src[i] === '\\' && i + 1 < src.length) { i++; s += src[i++]; }
-        else s += src[i++];
+        if (src[i] === '\\' && i + 1 < src.length) {
+          i++;
+          s += src[i++];
+        } else s += src[i++];
       }
       if (src[i] !== q) throw new ExpressionError(`unterminated string at position ${pos}`);
       i++;
@@ -69,20 +82,68 @@ function tokenize(src: string): Tok[] {
 
     // Two-character operators (checked before single-char to avoid partial matches)
     const two = src.slice(i, i + 2);
-    if (two === '==') { toks.push({ t: 'EQEQ', v: '==', pos }); i += 2; continue; }
-    if (two === '!=') { toks.push({ t: 'NEQ', v: '!=', pos }); i += 2; continue; }
-    if (two === '&&') { toks.push({ t: 'AND', v: '&&', pos }); i += 2; continue; }
-    if (two === '||') { toks.push({ t: 'OR', v: '||', pos }); i += 2; continue; }
+    if (two === '==') {
+      toks.push({ t: 'EQEQ', v: '==', pos });
+      i += 2;
+      continue;
+    }
+    if (two === '!=') {
+      toks.push({ t: 'NEQ', v: '!=', pos });
+      i += 2;
+      continue;
+    }
+    if (two === '&&') {
+      toks.push({ t: 'AND', v: '&&', pos });
+      i += 2;
+      continue;
+    }
+    if (two === '||') {
+      toks.push({ t: 'OR', v: '||', pos });
+      i += 2;
+      continue;
+    }
 
     // Single-character tokens
-    if (c === '!') { toks.push({ t: 'BANG', v: '!', pos }); i++; continue; }
-    if (c === '|') { toks.push({ t: 'PIPE', v: '|', pos }); i++; continue; }
-    if (c === '.') { toks.push({ t: 'DOT', v: '.', pos }); i++; continue; }
-    if (c === '?') { toks.push({ t: 'QMARK', v: '?', pos }); i++; continue; }
-    if (c === ':') { toks.push({ t: 'COLON', v: ':', pos }); i++; continue; }
-    if (c === '(') { toks.push({ t: 'LP', v: '(', pos }); i++; continue; }
-    if (c === ')') { toks.push({ t: 'RP', v: ')', pos }); i++; continue; }
-    if (c === ',') { toks.push({ t: 'COMMA', v: ',', pos }); i++; continue; }
+    if (c === '!') {
+      toks.push({ t: 'BANG', v: '!', pos });
+      i++;
+      continue;
+    }
+    if (c === '|') {
+      toks.push({ t: 'PIPE', v: '|', pos });
+      i++;
+      continue;
+    }
+    if (c === '.') {
+      toks.push({ t: 'DOT', v: '.', pos });
+      i++;
+      continue;
+    }
+    if (c === '?') {
+      toks.push({ t: 'QMARK', v: '?', pos });
+      i++;
+      continue;
+    }
+    if (c === ':') {
+      toks.push({ t: 'COLON', v: ':', pos });
+      i++;
+      continue;
+    }
+    if (c === '(') {
+      toks.push({ t: 'LP', v: '(', pos });
+      i++;
+      continue;
+    }
+    if (c === ')') {
+      toks.push({ t: 'RP', v: ')', pos });
+      i++;
+      continue;
+    }
+    if (c === ',') {
+      toks.push({ t: 'COMMA', v: ',', pos });
+      i++;
+      continue;
+    }
 
     // Identifiers — hyphens are allowed mid-word so input names like dry-run work.
     // A hyphen is only consumed if the character after it is alphanumeric (no trailing
@@ -92,12 +153,13 @@ function tokenize(src: string): Tok[] {
       i++;
       while (i < src.length) {
         const ch = src[i]!;
-        if (/[a-zA-Z0-9_]/.test(ch)) { s += ch; i++; }
-        else if (ch === '-' && /[a-zA-Z0-9_]/.test(src[i + 1] ?? '')) {
+        if (/[a-zA-Z0-9_]/.test(ch)) {
+          s += ch;
+          i++;
+        } else if (ch === '-' && /[a-zA-Z0-9_]/.test(src[i + 1] ?? '')) {
           s += src[i++]; // hyphen
           s += src[i++]; // the char after it
-        }
-        else break;
+        } else break;
       }
       toks.push({ t: s === 'true' || s === 'false' ? 'BOOL' : 'IDENT', v: s, pos });
       continue;
@@ -129,8 +191,12 @@ class Parser {
   private i = 0;
   constructor(private readonly toks: Tok[]) {}
 
-  private peek(): Tok { return this.toks[this.i]!; }
-  private consume(): Tok { return this.toks[this.i++]!; }
+  private peek(): Tok {
+    return this.toks[this.i]!;
+  }
+  private consume(): Tok {
+    return this.toks[this.i++]!;
+  }
 
   private expect(t: TT): Tok {
     const tok = this.consume();
@@ -139,7 +205,10 @@ class Parser {
   }
 
   private match(t: TT): boolean {
-    if (this.peek().t === t) { this.i++; return true; }
+    if (this.peek().t === t) {
+      this.i++;
+      return true;
+    }
     return false;
   }
 
@@ -222,9 +291,18 @@ class Parser {
       return node;
     }
 
-    if (tok.t === 'STR') { this.consume(); return { k: 'str', value: tok.v }; }
-    if (tok.t === 'NUM') { this.consume(); return { k: 'num', value: Number(tok.v) }; }
-    if (tok.t === 'BOOL') { this.consume(); return { k: 'bool', value: tok.v === 'true' }; }
+    if (tok.t === 'STR') {
+      this.consume();
+      return { k: 'str', value: tok.v };
+    }
+    if (tok.t === 'NUM') {
+      this.consume();
+      return { k: 'num', value: Number(tok.v) };
+    }
+    if (tok.t === 'BOOL') {
+      this.consume();
+      return { k: 'bool', value: tok.v === 'true' };
+    }
 
     if (tok.t === 'IDENT') {
       this.consume();
@@ -282,58 +360,95 @@ function requireArg(v: ExprValue | undefined, fn: string, n: number): ExprValue 
 }
 
 const FILTERS = new Map<string, FilterFn>([
-  ['upper',      ([v])       => requireStr(v, 'upper').toUpperCase()],
-  ['lower',      ([v])       => requireStr(v, 'lower').toLowerCase()],
-  ['trim',       ([v])       => requireStr(v, 'trim').trim()],
-  ['length',     ([v])       => { requireArg(v, 'length', 1); return String(v).length; }],
-  ['string',     ([v])       => { requireArg(v, 'string', 1); return String(v); }],
-  ['number',     ([v])       => {
-    requireArg(v, 'number', 1);
-    const n = Number(v);
-    if (isNaN(n)) throw new ExpressionError(`number(): cannot convert '${v}' to a number`);
-    return n;
-  }],
-  ['boolean',    ([v])       => {
-    requireArg(v, 'boolean', 1);
-    if (typeof v === 'boolean') return v;
-    const s = String(v).toLowerCase();
-    if (s === 'true' || s === '1' || s === 'yes') return true;
-    if (s === 'false' || s === '0' || s === 'no') return false;
-    throw new ExpressionError(`boolean(): cannot convert '${v}' to a boolean`);
-  }],
-  ['default',    ([v, d])    => {
-    requireArg(d, 'default', 2);
-    return v !== undefined && v !== '' ? v : d!;
-  }],
-  ['replace',    ([v, f, t]) => {
-    const s = requireStr(v, 'replace');
-    requireArg(f, 'replace', 2); requireArg(t, 'replace', 3);
-    return s.split(String(f)).join(String(t));
-  }],
-  ['contains',   ([v, n])    => {
-    const s = requireStr(v, 'contains');
-    requireArg(n, 'contains', 2);
-    return s.includes(String(n));
-  }],
-  ['startsWith', ([v, p])    => {
-    const s = requireStr(v, 'startsWith');
-    requireArg(p, 'startsWith', 2);
-    return s.startsWith(String(p));
-  }],
-  ['endsWith',   ([v, p])    => {
-    const s = requireStr(v, 'endsWith');
-    requireArg(p, 'endsWith', 2);
-    return s.endsWith(String(p));
-  }],
+  ['upper', ([v]) => requireStr(v, 'upper').toUpperCase()],
+  ['lower', ([v]) => requireStr(v, 'lower').toLowerCase()],
+  ['trim', ([v]) => requireStr(v, 'trim').trim()],
+  [
+    'length',
+    ([v]) => {
+      requireArg(v, 'length', 1);
+      return String(v).length;
+    },
+  ],
+  [
+    'string',
+    ([v]) => {
+      requireArg(v, 'string', 1);
+      return String(v);
+    },
+  ],
+  [
+    'number',
+    ([v]) => {
+      requireArg(v, 'number', 1);
+      const n = Number(v);
+      if (isNaN(n)) throw new ExpressionError(`number(): cannot convert '${v}' to a number`);
+      return n;
+    },
+  ],
+  [
+    'boolean',
+    ([v]) => {
+      requireArg(v, 'boolean', 1);
+      if (typeof v === 'boolean') return v;
+      const s = String(v).toLowerCase();
+      if (s === 'true' || s === '1' || s === 'yes') return true;
+      if (s === 'false' || s === '0' || s === 'no') return false;
+      throw new ExpressionError(`boolean(): cannot convert '${v}' to a boolean`);
+    },
+  ],
+  [
+    'default',
+    ([v, d]) => {
+      requireArg(d, 'default', 2);
+      return v !== undefined && v !== '' ? v : d!;
+    },
+  ],
+  [
+    'replace',
+    ([v, f, t]) => {
+      const s = requireStr(v, 'replace');
+      requireArg(f, 'replace', 2);
+      requireArg(t, 'replace', 3);
+      return s.split(String(f)).join(String(t));
+    },
+  ],
+  [
+    'contains',
+    ([v, n]) => {
+      const s = requireStr(v, 'contains');
+      requireArg(n, 'contains', 2);
+      return s.includes(String(n));
+    },
+  ],
+  [
+    'startsWith',
+    ([v, p]) => {
+      const s = requireStr(v, 'startsWith');
+      requireArg(p, 'startsWith', 2);
+      return s.startsWith(String(p));
+    },
+  ],
+  [
+    'endsWith',
+    ([v, p]) => {
+      const s = requireStr(v, 'endsWith');
+      requireArg(p, 'endsWith', 2);
+      return s.endsWith(String(p));
+    },
+  ],
 ]);
 
 // ─── Evaluator ───────────────────────────────────────────────────────────────
 
 function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
   switch (node.k) {
-    case 'str':  return node.value;
-    case 'num':  return node.value;
-    case 'bool': return node.value;
+    case 'str':
+      return node.value;
+    case 'num':
+      return node.value;
+    case 'bool':
+      return node.value;
 
     case 'var': {
       const [ns, ...parts] = node.path;
@@ -364,7 +479,7 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
       if (node.name === 'default') {
         if (node.args.length !== 2) throw new ExpressionError('default() requires exactly 2 arguments');
         const v = evaluate(node.args[0]!, ctx);
-        return (v !== undefined && v !== '') ? v : evaluate(node.args[1]!, ctx);
+        return v !== undefined && v !== '' ? v : evaluate(node.args[1]!, ctx);
       }
       const fn = FILTERS.get(node.name);
       if (!fn) {
@@ -374,7 +489,8 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
       return fn(node.args.map((a) => evaluate(a, ctx)));
     }
 
-    case 'not': return !evaluate(node.expr, ctx);
+    case 'not':
+      return !evaluate(node.expr, ctx);
 
     case 'and': {
       const left = evaluate(node.left, ctx);
@@ -386,8 +502,10 @@ function evaluate(node: ExprNode, ctx: InterpolationContext): ExprValue {
       return left ? left : evaluate(node.right, ctx);
     }
 
-    case 'eq':  return String(evaluate(node.left, ctx)) === String(evaluate(node.right, ctx));
-    case 'neq': return String(evaluate(node.left, ctx)) !== String(evaluate(node.right, ctx));
+    case 'eq':
+      return String(evaluate(node.left, ctx)) === String(evaluate(node.right, ctx));
+    case 'neq':
+      return String(evaluate(node.left, ctx)) !== String(evaluate(node.right, ctx));
 
     case 'ternary': {
       const cond = evaluate(node.cond, ctx);
@@ -464,19 +582,13 @@ export function interpolateValue(value: WithValue, ctx: InterpolationContext): W
   return interpolate(value, ctx);
 }
 
-export function interpolateMap(
-  map: Record<string, string>,
-  ctx: InterpolationContext,
-): Record<string, string> {
+export function interpolateMap(map: Record<string, string>, ctx: InterpolationContext): Record<string, string> {
   const out: Record<string, string> = Object.create(null);
   for (const [k, v] of Object.entries(map)) out[k] = interpolate(v, ctx);
   return out;
 }
 
-export function interpolateWith(
-  map: Record<string, WithValue>,
-  ctx: InterpolationContext,
-): Record<string, WithValue> {
+export function interpolateWith(map: Record<string, WithValue>, ctx: InterpolationContext): Record<string, WithValue> {
   const out: Record<string, WithValue> = Object.create(null);
   for (const [k, v] of Object.entries(map)) out[k] = interpolateValue(v, ctx);
   return out;

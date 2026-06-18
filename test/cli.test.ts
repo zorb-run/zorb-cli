@@ -27,10 +27,7 @@ async function runCli(args: string[], env: Record<string, string | undefined> = 
     stderr: 'pipe',
   });
 
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
   return { exitCode: proc.exitCode ?? -1, stdout, stderr };
 }

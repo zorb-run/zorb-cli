@@ -13,6 +13,8 @@ import {
   type YAMLSeq,
 } from 'yaml';
 import type {
+  ActionDefaults,
+  ActionRuntimeDefaults,
   ActionStep,
   Defaults,
   Docker,
@@ -139,12 +141,14 @@ interface Ctx {
 const WORKFLOW_KEYS = ['version', 'defaults', 'env', 'secrets', 'tasks'] as const;
 const TASK_KEYS = ['description', 'inputs', 'defaults', 'env', 'steps'] as const;
 const INPUT_KEYS = ['description', 'type', 'required', 'default'] as const;
-const DEFAULTS_KEYS = ['run'] as const;
+const DEFAULTS_KEYS = ['run', 'action'] as const;
 const RUN_DEFAULTS_KEYS = ['shell', 'cwd', 'env'] as const;
+const ACTION_DEFAULTS_KEYS = ['js', 'py'] as const;
+const ACTION_LANG_DEFAULTS_KEYS = ['bin'] as const;
 const STEP_BASE_KEYS = ['id', 'name', 'env'] as const;
 const STEP_RUN_KEYS = [...STEP_BASE_KEYS, 'run', 'cwd', 'shell', 'docker'] as const;
-const STEP_USES_KEYS = [...STEP_BASE_KEYS, 'uses', 'with'] as const;
-const STEP_ALL_KEYS = [...STEP_BASE_KEYS, 'run', 'cwd', 'shell', 'docker', 'uses', 'with'] as const;
+const STEP_USES_KEYS = [...STEP_BASE_KEYS, 'uses', 'with', 'bin'] as const;
+const STEP_ALL_KEYS = [...STEP_BASE_KEYS, 'run', 'cwd', 'shell', 'docker', 'uses', 'with', 'bin'] as const;
 const DOCKER_KEYS = ['image', 'volumes', 'network', 'workdir', 'platform', 'entrypoint', 'pull'] as const;
 const INPUT_TYPES: readonly InputType[] = ['string', 'number', 'boolean'];
 const DOCKER_PULL: ReadonlyArray<NonNullable<Docker['pull']>> = ['always', 'never', 'if-not-present'];
@@ -279,7 +283,12 @@ function validateTasks(ctx: Ctx, node: Node): Record<string, Task> {
   for (const pair of map.items) {
     const { node: keyNode, name } = pairKey(pair);
     if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(name)) {
-      fail(ctx, keyNode, `invalid task name '${name}'`, 'task names must start with a letter or underscore and contain only letters, numbers, hyphens, and underscores');
+      fail(
+        ctx,
+        keyNode,
+        `invalid task name '${name}'`,
+        'task names must start with a letter or underscore and contain only letters, numbers, hyphens, and underscores',
+      );
     }
     if (Object.hasOwn(out, name)) fail(ctx, keyNode, `duplicate task '${name}'`);
     out[name] = validateTask(ctx, pair.value as Node, name);
@@ -360,8 +369,38 @@ function validateInput(ctx: Ctx, node: Node, where: string, _keyNode: Scalar): I
 function validateDefaults(ctx: Ctx, node: Node, where: string): Defaults {
   const map = requireMap(ctx, node, where);
   checkAllowedKeys(ctx, map, DEFAULTS_KEYS, where);
+  const out: Defaults = {};
   const runPair = getPair(map, 'run');
-  return { run: runPair ? validateRunDefaults(ctx, runPair.value as Node, `${where}.run`) : undefined };
+  if (runPair) out.run = validateRunDefaults(ctx, runPair.value as Node, `${where}.run`);
+  const actionPair = getPair(map, 'action');
+  if (actionPair) out.action = validateActionDefaults(ctx, actionPair.value as Node, `${where}.action`);
+  return out;
+}
+
+function validateActionDefaults(ctx: Ctx, node: Node, where: string): ActionDefaults {
+  const map = requireMap(ctx, node, where);
+  checkAllowedKeys(ctx, map, ACTION_DEFAULTS_KEYS, where);
+  const out: ActionDefaults = {};
+  for (const lang of ACTION_DEFAULTS_KEYS) {
+    const langPair = getPair(map, lang);
+    if (!langPair) continue;
+    const langMap = requireMap(ctx, langPair.value as Node, `${where}.${lang}`);
+    checkAllowedKeys(ctx, langMap, ACTION_LANG_DEFAULTS_KEYS, `${where}.${lang}`);
+    const runtime: ActionRuntimeDefaults = {};
+    const binPair = getPair(langMap, 'bin');
+    if (binPair) runtime.bin = validateBinTemplate(ctx, binPair.value as Node, `${where}.${lang}.bin`);
+    out[lang] = runtime;
+  }
+  return out;
+}
+
+function validateBinTemplate(ctx: Ctx, node: Node, where: string): string {
+  const value = requireString(ctx, node, where);
+  if (value.trim() === '') fail(ctx, node, `${where} must not be empty`);
+  if (!value.includes('{0}')) {
+    fail(ctx, node, `${where} must include the '{0}' placeholder (substituted with the runner script path)`);
+  }
+  return value;
 }
 
 function validateRunDefaults(ctx: Ctx, node: Node, where: string): RunDefaults {
@@ -417,7 +456,7 @@ function validateStep(ctx: Ctx, node: Node, where: string): Step {
     fail(ctx, map, `${where} must define either 'run' or 'uses'`);
   }
   if (runPair && usesPair) {
-    fail(ctx, usesPair.value as Node ?? map, `${where} cannot define both 'run' and 'uses'`);
+    fail(ctx, (usesPair.value as Node) ?? map, `${where} cannot define both 'run' and 'uses'`);
   }
 
   if (runPair) {
@@ -438,7 +477,8 @@ function validateRunStep(ctx: Ctx, map: YAMLMap, where: string): Step {
   const shell = getPair(map, 'shell');
   if (shell) (out as { shell?: string }).shell = requireString(ctx, shell.value as Node, `${where}.shell`);
   const docker = getPair(map, 'docker');
-  if (docker) (out as { docker?: Docker | string }).docker = validateDocker(ctx, docker.value as Node, `${where}.docker`);
+  if (docker)
+    (out as { docker?: Docker | string }).docker = validateDocker(ctx, docker.value as Node, `${where}.docker`);
   return out;
 }
 
@@ -449,6 +489,8 @@ function validateUsesStep(ctx: Ctx, map: YAMLMap, where: string): Step {
   applyStepBase(ctx, map, where, out);
   const withPair = getPair(map, 'with');
   if (withPair) (out as { with?: WithMap }).with = validateWith(ctx, withPair.value as Node, `${where}.with`);
+  const binPair = getPair(map, 'bin');
+  if (binPair) (out as { bin?: string }).bin = validateBinTemplate(ctx, binPair.value as Node, `${where}.bin`);
   return out;
 }
 

@@ -53,12 +53,7 @@ export interface ResolveOptions {
   onWarning?: (message: string) => void;
 }
 
-export function resolveInputs({
-  taskName,
-  defs = {},
-  provided,
-  onWarning,
-}: ResolveOptions): Record<string, WithValue> {
+export function resolveInputs({ taskName, defs = {}, provided, onWarning }: ResolveOptions): Record<string, WithValue> {
   const out: Record<string, WithValue> = Object.create(null);
 
   for (const name of Object.keys(defs)) {

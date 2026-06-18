@@ -31,10 +31,7 @@ async function runCli(
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   await proc.exited;
   return { exitCode: proc.exitCode ?? -1, stdout, stderr };
 }
@@ -118,7 +115,17 @@ describe('zorb run', () => {
     try {
       writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
       const { exitCode, stdout } = await runCli(
-        ['run', 'deploy', '--with', 'environment=staging', '--with', 'dry-run=yes', '--with', 'replicas=3', '--verbose'],
+        [
+          'run',
+          'deploy',
+          '--with',
+          'environment=staging',
+          '--with',
+          'dry-run=yes',
+          '--with',
+          'replicas=3',
+          '--verbose',
+        ],
         { cwd: dir },
       );
       expect(exitCode).toBe(0);
@@ -169,10 +176,9 @@ describe('zorb run', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
-      const { exitCode, stdout } = await runCli(
-        ['run', 'deploy', '--with', 'environment=staging', '--verbose'],
-        { cwd: dir },
-      );
+      const { exitCode, stdout } = await runCli(['run', 'deploy', '--with', 'environment=staging', '--verbose'], {
+        cwd: dir,
+      });
       expect(exitCode).toBe(0);
       expect(stdout).toContain('dry-run');
       expect(stdout).toContain('false');
@@ -199,10 +205,7 @@ describe('zorb run', () => {
       - run: echo "mode=$MODE"
 `,
       );
-      const { exitCode, stdout } = await runCli(
-        ['run', 'ternary', '--with', 'env=prod'],
-        { cwd: dir },
-      );
+      const { exitCode, stdout } = await runCli(['run', 'ternary', '--with', 'env=prod'], { cwd: dir });
       expect(exitCode).toBe(0);
       expect(stdout).toContain('mode=production');
     } finally {
@@ -217,10 +220,7 @@ describe('zorb run', () => {
         join(dir, 'zorb.yml'),
         `tasks:\n  show:\n    inputs:\n      environment:\n        type: string\n        required: true\n    env:\n      TARGET: \${{ inputs.environment }}\n    steps:\n      - run: echo "target=$TARGET"\n`,
       );
-      const { exitCode, stdout } = await runCli(
-        ['run', 'show', '--with', 'environment=prod'],
-        { cwd: dir },
-      );
+      const { exitCode, stdout } = await runCli(['run', 'show', '--with', 'environment=prod'], { cwd: dir });
       expect(exitCode).toBe(0);
       expect(stdout).toContain('target=prod');
     } finally {
@@ -334,10 +334,7 @@ tasks:
     try {
       const sub = join(dir, 'sub');
       mkdirSync(sub, { recursive: true });
-      writeFileSync(
-        join(dir, 'zorb.yml'),
-        `tasks:\n  here:\n    steps:\n      - cwd: ./sub\n        run: pwd\n`,
-      );
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  here:\n    steps:\n      - cwd: ./sub\n        run: pwd\n`);
       const { exitCode, stdout } = await runCli(['run', 'here'], { cwd: dir });
       expect(exitCode).toBe(0);
       expect(stdout).toContain('/sub');
@@ -521,17 +518,42 @@ tasks:
     }
   });
 
-  test('uses: steps error with an A8 hint', async () => {
+  test('uses: with an unresolved local path errors with a tried list', async () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(
-        join(dir, 'zorb.yml'),
-        `tasks:\n  release:\n    steps:\n      - uses: ./scripts/tag.action\n`,
-      );
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  release:\n    steps:\n      - uses: ./scripts/tag.action\n`);
       const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
       expect(exitCode).toBe(1);
-      expect(stderr).toContain('uses: steps are not yet supported');
-      expect(stderr).toContain('A8');
+      expect(stderr).toContain(`could not resolve action './scripts/tag.action'`);
+      expect(stderr).toContain('tried:');
+      expect(stderr).toContain('tag.action.js');
+      expect(stderr).toContain('tag.action.py');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('uses: with an NPM-style spec errors with an A9 hint', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  release:\n    steps:\n      - uses: "@zorb/aws/s3/sync"\n`);
+      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('@zorb/aws/s3/sync');
+      expect(stderr).toContain('A9');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('uses: with a cross-file zorb.<task> spec errors with an A10 hint', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  release:\n    steps:\n      - uses: ./zorb.build\n`);
+      const { exitCode, stderr } = await runCli(['run', 'release'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('./zorb.build');
+      expect(stderr).toContain('A10');
     } finally {
       cleanup();
     }
