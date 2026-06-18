@@ -47,7 +47,7 @@ export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
   }
 
   const baseDir = dirname(fromFile);
-  const absolute = isAbsolute(uses) ? uses : resolvePath(baseDir, uses);
+  const absolute = resolvePath(baseDir, uses);
 
   // If the user wrote an explicit recognised extension, use the file as-is.
   // This is checked before the workflow-ref pattern so that an action file
@@ -101,7 +101,7 @@ function resolveWorkflowRef(uses: string, fromFile: string, base: string, firstD
   }
   const baseDir = dirname(fromFile);
   const usesDir = dirname(uses);
-  const targetDir = isAbsolute(uses) ? usesDir : resolvePath(baseDir, usesDir);
+  const targetDir = resolvePath(baseDir, usesDir);
   const workflowPath = join(targetDir, 'zorb.yml');
   return { kind: 'workflow', workflowPath, taskName };
 }
