@@ -1,9 +1,9 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Colors } from '../colors.ts';
-import { loadWorkflow, type LoadOptions } from '../config.ts';
+import { loadWorkflow, type LoadOptions, WorkflowError } from '../config.ts';
 import { RunContext } from '../context.ts';
 import { interpolateMap, interpolateWith } from '../expressions.ts';
-import { parseWithPairs, resolveInputs } from '../inputs.ts';
+import { InputError, parseWithPairs, resolveInputs } from '../inputs.ts';
 import type { Logger } from '../logger.ts';
 import { executeShellStep } from '../steps/run-shell.ts';
 import { DEFAULT_BINS, executeActionStep } from '../steps/run-action.ts';
@@ -15,10 +15,12 @@ import {
   type EnvMap,
   type Input,
   type Step,
+  type Task,
   type WithMap,
   type WithValue,
+  type Workflow,
 } from '../types.ts';
-import { resolveAction, ResolveError, type ResolvedAction } from '../utils/resolve.ts';
+import { resolveUses, ResolveError, type ResolvedAction, type ResolvedWorkflow } from '../utils/resolve.ts';
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -82,11 +84,11 @@ export async function runRun({
   const shellEnvBase: Record<string, string> = Object.assign(Object.create(null), procEnv, inlineEnv);
   const actionEnvBase: Record<string, string> = Object.assign(Object.create(null), inlineEnv);
 
-  const secretsSnap = () => runCtx.getSecretsSnapshot();
-  const defaultCwd = dirname(path);
-
   // Secrets block — actions only, executed before task steps. taskName is
-  // already resolved so loaders can use it in log messages.
+  // already resolved so loaders can use it in log messages. Cross-file refs
+  // in secrets: are technically allowed by the resolver but they share the
+  // same RunContext; the run-scoped secret table picks up registrations from
+  // any nested action.
   const secretsSteps = workflow.secrets ?? [];
   if (secretsSteps.length > 0) {
     log.verbose(`executing ${secretsSteps.length} secrets step(s)`);
@@ -94,17 +96,19 @@ export async function runRun({
       const step = secretsSteps[i]!;
       log.info(colors.gray(`> Secret ${i + 1}/${secretsSteps.length}: ${step.uses}`));
 
-      const code = await runActionStep({
+      const code = await runActionOrWorkflowStep({
         step,
         workflow,
         task: undefined,
         inputs,
         runCtx,
         actionEnvBase,
+        shellEnvBase,
         workflowPath: path,
-        defaultCwd,
         taskName,
         log,
+        colors,
+        cycleStack: [`${path}::${taskName}`],
       });
       if (code !== 0) {
         log.error(`secrets step ${i + 1}/${secretsSteps.length} failed with exit code ${code}`);
@@ -113,6 +117,53 @@ export async function runRun({
     }
   }
 
+  return runTask({
+    log,
+    colors,
+    workflow,
+    workflowPath: path,
+    taskName,
+    task,
+    inputs,
+    shellEnvBase,
+    actionEnvBase,
+    runCtx,
+    cycleStack: [`${path}::${taskName}`],
+  });
+}
+
+interface TaskRunArgs {
+  log: Logger;
+  colors: Colors;
+  workflow: Workflow;
+  workflowPath: string;
+  taskName: string;
+  task: Task;
+  inputs: Record<string, WithValue>;
+  shellEnvBase: Record<string, string>;
+  actionEnvBase: Record<string, string>;
+  runCtx: RunContext;
+  /** Ancestor task chain: `${absoluteWorkflowPath}::${taskName}` entries. */
+  cycleStack: string[];
+}
+
+async function runTask(args: TaskRunArgs): Promise<number> {
+  const {
+    log,
+    colors,
+    workflow,
+    workflowPath,
+    taskName,
+    task,
+    inputs,
+    shellEnvBase,
+    actionEnvBase,
+    runCtx,
+    cycleStack,
+  } = args;
+
+  const defaultCwd = dirname(workflowPath);
+  const secretsSnap = () => runCtx.getSecretsSnapshot();
   const total = task.steps.length;
 
   for (let i = 0; i < total; i++) {
@@ -121,17 +172,19 @@ export async function runRun({
     log.info(colors.gray(`> Step ${i + 1}/${total}: ${label}`));
 
     if (isActionStep(step)) {
-      const code = await runActionStep({
+      const code = await runActionOrWorkflowStep({
         step,
         workflow,
         task,
         inputs,
         runCtx,
         actionEnvBase,
-        workflowPath: path,
-        defaultCwd,
+        shellEnvBase,
+        workflowPath,
         taskName,
         log,
+        colors,
+        cycleStack,
       });
       if (code !== 0) {
         log.error(`step ${i + 1}/${total} failed with exit code ${code}`);
@@ -181,23 +234,38 @@ export async function runRun({
 
 interface RunActionArgs {
   step: ActionStep;
-  workflow: { defaults?: { action?: ActionDefaults }; env?: EnvMap };
-  task: { defaults?: { action?: ActionDefaults }; env?: EnvMap } | undefined;
+  workflow: Workflow;
+  task: Task | undefined;
   inputs: Record<string, WithValue>;
   runCtx: RunContext;
   actionEnvBase: Record<string, string>;
+  shellEnvBase: Record<string, string>;
   workflowPath: string;
-  defaultCwd: string;
   taskName: string;
   log: Logger;
+  colors: Colors;
+  cycleStack: string[];
 }
 
-async function runActionStep(args: RunActionArgs): Promise<number> {
-  const { step, workflow, task, inputs, runCtx, actionEnvBase, workflowPath, defaultCwd, taskName, log } = args;
+async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
+  const {
+    step,
+    workflow,
+    task,
+    inputs,
+    runCtx,
+    actionEnvBase,
+    shellEnvBase,
+    workflowPath,
+    taskName,
+    log,
+    colors,
+    cycleStack,
+  } = args;
 
   let resolved;
   try {
-    resolved = resolveAction({ uses: step.uses, fromFile: workflowPath });
+    resolved = resolveUses({ uses: step.uses, fromFile: workflowPath });
   } catch (e) {
     if (e instanceof ResolveError) {
       log.error(e.message);
@@ -209,10 +277,10 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
 
   const secretsSnap = runCtx.getSecretsSnapshot();
 
-  // Action env stack: inline (-e / --env-file) → workflow.env → task.env →
-  // dynamic (setEnv) → step.env. Notably absent: process.env (the user's shell
-  // exports do not leak into actions) and defaults.run.env (those are the
-  // floor for `run:` steps, not for actions).
+  // Action env stack: actionEnvBase → workflow.env → task.env → dynamic → step.env.
+  // Notably absent: process.env (the user's shell exports do not leak into actions)
+  // and defaults.run.env (those are the floor for `run:` steps, not for actions).
+  // This is also the "effective env" we inherit into a cross-file callee.
   const acc: Record<string, string> = Object.assign(Object.create(null), actionEnvBase);
   const layer = (m: EnvMap | undefined) => {
     if (!m) return;
@@ -228,6 +296,51 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
     ? interpolateWith(step.with, { inputs, env: effectiveEnv, secrets: secretsSnap })
     : {};
 
+  if (resolved.kind === 'workflow') {
+    return runWorkflowRefStep({
+      resolved,
+      withMap,
+      callerEffectiveEnv: effectiveEnv,
+      runCtx,
+      shellEnvBase,
+      log,
+      colors,
+      cycleStack,
+    });
+  }
+
+  return executeAction({
+    resolved,
+    step,
+    workflow,
+    task,
+    effectiveEnv,
+    withMap,
+    runCtx,
+    log,
+    workflowPath,
+    taskName,
+    stepEnv,
+  });
+}
+
+interface ExecuteActionArgs {
+  resolved: ResolvedAction;
+  step: ActionStep;
+  workflow: Workflow;
+  task: Task | undefined;
+  effectiveEnv: Record<string, string>;
+  withMap: WithMap;
+  runCtx: RunContext;
+  log: Logger;
+  workflowPath: string;
+  taskName: string;
+  stepEnv: Record<string, string>;
+}
+
+async function executeAction(args: ExecuteActionArgs): Promise<number> {
+  const { resolved, step, workflow, task, effectiveEnv, withMap, runCtx, log, workflowPath, taskName, stepEnv } = args;
+
   const bin = resolveActionBin(resolved, step, task, workflow);
 
   log.debug(`  action: ${resolved.path} (${resolved.language})`);
@@ -239,7 +352,7 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
     resolved,
     actionFn: 'action',
     inputs: withMap,
-    context: { cwd: defaultCwd, taskName, stepId: step.id },
+    context: { cwd: dirname(workflowPath), taskName, stepId: step.id },
     env: effectiveEnv,
     bin,
   });
@@ -256,6 +369,105 @@ async function runActionStep(args: RunActionArgs): Promise<number> {
   if (step.id) runCtx.setStepOutputs(step.id, result.outputs);
 
   return 0;
+}
+
+interface WorkflowRefArgs {
+  resolved: ResolvedWorkflow;
+  withMap: WithMap;
+  callerEffectiveEnv: Record<string, string>;
+  runCtx: RunContext;
+  shellEnvBase: Record<string, string>;
+  log: Logger;
+  colors: Colors;
+  cycleStack: string[];
+}
+
+async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
+  const { resolved, withMap, callerEffectiveEnv, runCtx, shellEnvBase, log, colors, cycleStack } = args;
+  const { workflowPath: calleeWfPath, taskName: calleeTaskName } = resolved;
+
+  const cycleKey = `${calleeWfPath}::${calleeTaskName}`;
+  if (cycleStack.includes(cycleKey)) {
+    const trail = [...cycleStack, cycleKey].map(formatCycleEntry).join(' → ');
+    log.error(`circular task reference: ${trail}`);
+    return 1;
+  }
+
+  let calleeWf: Workflow;
+  let calleePath: string;
+  try {
+    const loaded = loadWorkflow({ file: calleeWfPath });
+    calleeWf = loaded.workflow;
+    calleePath = loaded.path;
+  } catch (e) {
+    if (e instanceof WorkflowError) {
+      log.error(e.format());
+      return 1;
+    }
+    throw e;
+  }
+
+  const calleeTask = calleeWf.tasks[calleeTaskName];
+  if (!calleeTask) {
+    log.error(`task '${calleeTaskName}' not found in ${calleePath}`);
+    const avail = Object.keys(calleeWf.tasks);
+    if (avail.length > 0) log.hint(`available tasks: ${avail.join(', ')}`);
+    return 1;
+  }
+
+  // Callee inputs come from `with:` only — not the caller's inputs.
+  const providedStr: Record<string, string> = Object.create(null);
+  for (const [k, v] of Object.entries(withMap)) {
+    providedStr[k] = typeof v === 'string' ? v : String(v);
+  }
+  let calleeInputs: Record<string, WithValue>;
+  try {
+    calleeInputs = resolveInputs({
+      taskName: calleeTaskName,
+      defs: calleeTask.inputs,
+      provided: providedStr,
+      onWarning: (msg) => log.warn(msg),
+    });
+  } catch (e) {
+    if (e instanceof InputError) {
+      log.error(e.message);
+      return 1;
+    }
+    throw e;
+  }
+
+  // Caller's effective env (workflow + task + step) becomes the ambient base
+  // for the callee. The callee then layers its OWN workflow/task/step env on
+  // top inside runTask. The callee uses its own defaults — caller's
+  // defaults.run.env is excluded (action steps don't see it anyway).
+  const calleeActionEnvBase: Record<string, string> = Object.assign(Object.create(null), callerEffectiveEnv);
+  const calleeShellEnvBase: Record<string, string> = Object.assign(
+    Object.create(null),
+    shellEnvBase,
+    callerEffectiveEnv,
+  );
+
+  log.info(colors.gray(`  ↳ ${calleeTaskName} (${calleePath})`));
+
+  return runTask({
+    log,
+    colors,
+    workflow: calleeWf,
+    workflowPath: calleePath,
+    taskName: calleeTaskName,
+    task: calleeTask,
+    inputs: calleeInputs,
+    shellEnvBase: calleeShellEnvBase,
+    actionEnvBase: calleeActionEnvBase,
+    runCtx,
+    cycleStack: [...cycleStack, cycleKey],
+  });
+}
+
+function formatCycleEntry(key: string): string {
+  const sep = key.lastIndexOf('::');
+  if (sep === -1) return key;
+  return `${key.slice(sep + 2)} (${key.slice(0, sep)})`;
 }
 
 function resolvePath(base: string, p: string): string {
