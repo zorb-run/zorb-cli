@@ -4,7 +4,7 @@ import { createColors, shouldColor } from './colors.ts';
 import { runList } from './commands/list.ts';
 import { runRun } from './commands/run.ts';
 import { WorkflowError } from './config.ts';
-import { applyEnv, EnvFileError, parseEnvFile, parseInlineEnv } from './envfile.ts';
+import { EnvFileError, parseEnvFile, parseInlineEnv } from './envfile.ts';
 import { ExpressionError } from './expressions.ts';
 import { InputError } from './inputs.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
@@ -84,13 +84,17 @@ export async function main(rawArgs: string[]): Promise<number> {
   }
 
   const wantsHelpOnly =
-    command === 'help' ||
-    (args.help && (command === 'run' || command === 'use' || command === 'list'));
+    command === 'help' || (args.help && (command === 'run' || command === 'use' || command === 'list'));
+
+  // Inline env vars (--env-file then -e/--env) are kept separate from
+  // process.env so actions can be given a strict, declaration-only environment
+  // (see A8 runner principle). Shell steps merge process.env with this map.
+  const inlineEnv: Record<string, string> = Object.create(null);
 
   if (!wantsHelpOnly && args.envFile) {
     try {
       const vars = parseEnvFile(args.envFile);
-      applyEnv(vars);
+      for (const [k, v] of Object.entries(vars)) inlineEnv[k] = v;
       log.verbose(`loaded ${Object.keys(vars).length} env var(s) from ${args.envFile}`);
     } catch (e) {
       return handleEnvFileError(e, log);
@@ -99,13 +103,13 @@ export async function main(rawArgs: string[]): Promise<number> {
 
   if (!wantsHelpOnly && args.env.length > 0) {
     try {
-      const inline: Record<string, string> = {};
+      let count = 0;
       for (const pair of args.env) {
         const [key, value] = parseInlineEnv(pair);
-        inline[key] = value;
+        inlineEnv[key] = value; // -e overrides --env-file
+        count++;
       }
-      applyEnv(inline, process.env, { override: true });
-      log.verbose(`set ${Object.keys(inline).length} inline env var(s)`);
+      log.verbose(`set ${count} inline env var(s)`);
     } catch (e) {
       return handleEnvFileError(e, log);
     }
@@ -147,6 +151,7 @@ export async function main(rawArgs: string[]): Promise<number> {
           file: args.file,
           taskName: task,
           withPairs: args.with,
+          inlineEnv,
         });
       } catch (e) {
         return handleRunError(e, log);
