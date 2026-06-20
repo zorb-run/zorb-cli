@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Docker } from '../types.ts';
 import type { ShellStdio } from './run-shell.ts';
 
@@ -23,12 +24,17 @@ export interface DockerExecOptions {
   mask?: (text: string) => string;
   /** Override the docker binary (defaults to `docker`). Useful for tests. */
   dockerBin?: string;
+  /** Override the generated container name (otherwise: zorb-<uuid>). Useful for tests. */
+  containerName?: string;
+  /** When the signal aborts, run `docker stop` on the container so it shuts down cleanly. */
+  signal?: AbortSignal;
 }
 
 export interface DockerExecResult {
   exitCode: number;
   stdout?: string;
   stderr?: string;
+  aborted: boolean;
 }
 
 export const DEFAULT_CONTAINER_SHELL = '/bin/sh';
@@ -43,6 +49,7 @@ export interface BuildArgvOptions {
   run: string;
   shell?: string;
   outputMount?: DockerOutputMount;
+  containerName?: string;
 }
 
 // Build the argv passed to `docker`. Kept pure (no spawn, no I/O) so tests can
@@ -50,6 +57,8 @@ export interface BuildArgvOptions {
 export function buildDockerArgv(opts: BuildArgvOptions): string[] {
   const d = normaliseDocker(opts.docker);
   const argv: string[] = ['run', '--rm', '-i'];
+
+  if (opts.containerName) argv.push('--name', opts.containerName);
 
   for (const [k, v] of Object.entries(opts.env)) {
     argv.push('-e', `${k}=${v}`);
@@ -84,12 +93,16 @@ function mapPullPolicy(p: NonNullable<Docker['pull']>): string {
 
 export async function executeDockerStep(opts: DockerExecOptions): Promise<DockerExecResult> {
   const dockerBin = opts.dockerBin ?? 'docker';
+  // Naming the container is what makes signal handling work — `docker stop`
+  // targets it by name and the `--rm` flag cleans the stopped container up.
+  const containerName = opts.containerName ?? `zorb-${randomUUID()}`;
   const argv = buildDockerArgv({
     docker: opts.docker,
     env: opts.env,
     run: opts.run,
     shell: opts.shell,
     outputMount: opts.outputMount,
+    containerName,
   });
 
   const { mask } = opts;
@@ -106,17 +119,24 @@ export async function executeDockerStep(opts: DockerExecOptions): Promise<Docker
     stderr: stderrSpawn,
   });
 
-  const [stdoutText, stderrText] = await Promise.all([
-    collectOutput(proc.stdout, stdoutSpawn, stdoutCaller, mask, process.stdout),
-    collectOutput(proc.stderr, stderrSpawn, stderrCaller, mask, process.stderr),
-  ]);
-  await proc.exited;
+  const detach = attachDockerAbort(dockerBin, containerName, opts.signal);
 
-  return {
-    exitCode: proc.exitCode ?? -1,
-    stdout: stdoutText,
-    stderr: stderrText,
-  };
+  try {
+    const [stdoutText, stderrText] = await Promise.all([
+      collectOutput(proc.stdout, stdoutSpawn, stdoutCaller, mask, process.stdout),
+      collectOutput(proc.stderr, stderrSpawn, stderrCaller, mask, process.stderr),
+    ]);
+    await proc.exited;
+
+    return {
+      exitCode: proc.exitCode ?? -1,
+      stdout: stdoutText,
+      stderr: stderrText,
+      aborted: opts.signal?.aborted ?? false,
+    };
+  } finally {
+    detach();
+  }
 }
 
 async function collectOutput(
@@ -134,4 +154,31 @@ async function collectOutput(
     return undefined;
   }
   return text;
+}
+
+// `docker stop --time 2 <name>` sends SIGTERM to the container's main process
+// then SIGKILL after the grace period — Docker itself enforces the grace, so we
+// don't need an in-process timer like we do for raw subprocesses.
+function attachDockerAbort(dockerBin: string, containerName: string, signal: AbortSignal | undefined): () => void {
+  if (!signal) return () => {};
+
+  const onAbort = () => {
+    try {
+      Bun.spawn({
+        cmd: [dockerBin, 'stop', '--time', '2', containerName],
+        stdout: 'ignore',
+        stderr: 'ignore',
+      });
+    } catch {
+      // Best-effort cleanup; the docker run process will exit on its own anyway.
+    }
+  };
+
+  if (signal.aborted) {
+    onAbort();
+  } else {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  return () => signal.removeEventListener('abort', onAbort);
 }

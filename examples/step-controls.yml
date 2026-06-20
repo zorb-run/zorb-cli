@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+# Per-step `timeout:`, `retries:`, and `backoff:`. Applies uniformly to
+# `run:`, `docker:`, and `uses:` steps. SIGINT (Ctrl-C) cancels the in-flight
+# step and the run as a whole.
+tasks:
+  flaky-fetch:
+    description: Retry a curl that might fail with exponential backoff
+    steps:
+      - name: Fetch
+        run: curl --fail https://example.com/api
+        timeout: 10s
+        retries: 3
+        backoff: exponential
+
+  long-build:
+    description: Fail the build if it takes longer than 5 minutes
+    steps:
+      - name: Compile
+        run: npm run build
+        timeout: 5m
+
+  flake-tests:
+    description: Re-run the test suite up to twice on failure (1s, 2s delays)
+    steps:
+      - name: Test
+        run: bun test
+        retries: 2
+        backoff: linear

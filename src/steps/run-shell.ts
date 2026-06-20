@@ -1,3 +1,5 @@
+import { attachProcessAbort } from '../utils/abort.ts';
+
 export type ShellStdio = 'inherit' | 'pipe' | 'ignore';
 
 export interface ShellExecOptions {
@@ -9,12 +11,18 @@ export interface ShellExecOptions {
   stdout?: ShellStdio;
   stderr?: ShellStdio;
   mask?: (text: string) => string;
+  /** When the signal aborts, SIGTERM the subprocess then SIGKILL after the grace period. */
+  signal?: AbortSignal;
+  /** Grace period (ms) between SIGTERM and SIGKILL on abort. Defaults to 2000. */
+  killGraceMs?: number;
 }
 
 export interface ShellExecResult {
   exitCode: number;
   stdout?: string;
   stderr?: string;
+  /** True when the signal aborted the subprocess. */
+  aborted: boolean;
 }
 
 export const DEFAULT_SHELL = process.env.SHELL ?? '/bin/sh';
@@ -47,17 +55,23 @@ export async function executeShellStep(opts: ShellExecOptions): Promise<ShellExe
     stderr: stderrSpawn,
   });
 
-  const [stdoutText, stderrText] = await Promise.all([
-    collectOutput(proc.stdout, stdoutSpawn, stdoutCaller, mask, process.stdout),
-    collectOutput(proc.stderr, stderrSpawn, stderrCaller, mask, process.stderr),
-  ]);
-  await proc.exited;
+  const detach = attachProcessAbort(proc, opts.signal, opts.killGraceMs ?? 2000);
+  try {
+    const [stdoutText, stderrText] = await Promise.all([
+      collectOutput(proc.stdout, stdoutSpawn, stdoutCaller, mask, process.stdout),
+      collectOutput(proc.stderr, stderrSpawn, stderrCaller, mask, process.stderr),
+    ]);
+    await proc.exited;
 
-  return {
-    exitCode: proc.exitCode ?? -1,
-    stdout: stdoutText,
-    stderr: stderrText,
-  };
+    return {
+      exitCode: proc.exitCode ?? -1,
+      stdout: stdoutText,
+      stderr: stderrText,
+      aborted: opts.signal?.aborted ?? false,
+    };
+  } finally {
+    detach();
+  }
 }
 
 export class ShellOutputError extends Error {

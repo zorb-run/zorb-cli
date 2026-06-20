@@ -43,10 +43,18 @@ export interface Docker {
   pull?: 'always' | 'never' | 'if-not-present';
 }
 
+export type Backoff = 'linear' | 'exponential';
+
 interface BaseStep {
   id?: string;
   name?: string;
   env?: EnvMap;
+  /** Raw duration string from YAML (e.g. '30s'). Validated at parse time. */
+  timeout?: string;
+  /** Number of additional attempts after the first. Total attempts = retries + 1. */
+  retries?: number;
+  /** Delay strategy between retry attempts. Defaults to no delay. */
+  backoff?: Backoff;
 }
 
 export interface ShellStep extends BaseStep {

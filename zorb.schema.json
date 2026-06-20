@@ -195,6 +195,21 @@
               "$ref": "#/$defs/docker"
             }
           ]
+        },
+        "timeout": {
+          "description": "Maximum duration the step is allowed to run before it is killed. Format: e.g. '500ms', '30s', '5m', '1h'.",
+          "type": "string",
+          "pattern": "^\\s*\\d+(?:\\.\\d+)?\\s*(?:ms|s|m|h)\\s*$"
+        },
+        "retries": {
+          "description": "Number of additional attempts after the first if the step fails. Total attempts = retries + 1.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoff": {
+          "description": "Delay strategy between retries. 'linear' delays grow by 1s each attempt; 'exponential' doubles each attempt (base 1s).",
+          "type": "string",
+          "enum": ["linear", "exponential"]
         }
       },
       "dependentSchemas": {
@@ -209,6 +224,9 @@
         },
         "docker": {
           "required": ["run"]
+        },
+        "backoff": {
+          "required": ["retries"]
         }
       }
     },

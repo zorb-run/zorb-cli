@@ -6,14 +6,15 @@ Self-contained workflow files showing different parts of the format. Try any of 
 zorb list -f examples/<name>.yml
 ```
 
-| Example                          | What it shows                                  |
-| -------------------------------- | ---------------------------------------------- |
-| [`basic.yml`](./basic.yml)       | Minimal tasks with `run:` steps                |
-| [`inputs.yml`](./inputs.yml)     | Typed inputs (`string`, `boolean`, `number`)   |
-| [`env.yml`](./env.yml)           | `env:` at workflow, task, and step scope       |
-| [`defaults.yml`](./defaults.yml) | `defaults.run.{shell, cwd, env}` precedence    |
-| [`docker.yml`](./docker.yml)     | `docker:` short and long form                  |
-| [`actions.yml`](./actions.yml)   | `uses:` for local actions, NPM, and cross-file |
+| Example                                    | What it shows                                  |
+| ------------------------------------------ | ---------------------------------------------- |
+| [`basic.yml`](./basic.yml)                 | Minimal tasks with `run:` steps                |
+| [`inputs.yml`](./inputs.yml)               | Typed inputs (`string`, `boolean`, `number`)   |
+| [`env.yml`](./env.yml)                     | `env:` at workflow, task, and step scope       |
+| [`defaults.yml`](./defaults.yml)           | `defaults.run.{shell, cwd, env}` precedence    |
+| [`docker.yml`](./docker.yml)               | `docker:` short and long form                  |
+| [`actions.yml`](./actions.yml)             | `uses:` for local actions, NPM, and cross-file |
+| [`step-controls.yml`](./step-controls.yml) | `timeout:`, `retries:`, `backoff:` per step    |
 
 Every example pins the JSON schema for editor autocomplete:
 

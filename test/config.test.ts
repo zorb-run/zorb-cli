@@ -350,6 +350,59 @@ tasks:
   });
 });
 
+describe('parseWorkflow — step controls (timeout, retries, backoff)', () => {
+  test('parses timeout/retries/backoff on a run: step', () => {
+    const wf = parseWorkflow(`tasks:
+  build:
+    steps:
+      - run: echo hi
+        timeout: 30s
+        retries: 3
+        backoff: exponential
+`);
+    const step = wf.tasks.build!.steps[0]!;
+    expect(step.timeout).toBe('30s');
+    expect(step.retries).toBe(3);
+    expect(step.backoff).toBe('exponential');
+  });
+
+  test('parses timeout on a uses: step', () => {
+    const wf = parseWorkflow(`tasks:
+  ship:
+    steps:
+      - uses: ./deploy.action
+        timeout: 5m
+`);
+    const step = wf.tasks.ship!.steps[0]!;
+    expect(step.timeout).toBe('5m');
+  });
+
+  test('rejects an invalid timeout string', () => {
+    const e = expectError(() => parseWorkflow(`tasks:\n  t:\n    steps:\n      - run: x\n        timeout: forever\n`));
+    expect(e.message).toContain('timeout');
+    expect(e.message).toContain('forever');
+  });
+
+  test('rejects a negative retries count', () => {
+    const e = expectError(() => parseWorkflow(`tasks:\n  t:\n    steps:\n      - run: x\n        retries: -1\n`));
+    expect(e.message).toContain('retries');
+  });
+
+  test('rejects backoff without retries', () => {
+    const e = expectError(() => parseWorkflow(`tasks:\n  t:\n    steps:\n      - run: x\n        backoff: linear\n`));
+    expect(e.message).toContain('backoff');
+    expect(e.message).toContain('retries');
+  });
+
+  test('rejects unknown backoff value', () => {
+    const e = expectError(() =>
+      parseWorkflow(`tasks:\n  t:\n    steps:\n      - run: x\n        retries: 2\n        backoff: weird\n`),
+    );
+    expect(e.message).toContain('backoff');
+    expect(e.message).toContain('linear');
+  });
+});
+
 describe('WorkflowError.format', () => {
   test('includes file, line, col, and hint', () => {
     const e = new WorkflowError('boom', 'wf.yml', 5, 2, 'try X');

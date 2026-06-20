@@ -15,6 +15,7 @@ import {
   isShellStep,
   type ActionDefaults,
   type ActionStep,
+  type Backoff,
   type EnvMap,
   type Input,
   type Step,
@@ -23,7 +24,12 @@ import {
   type WithValue,
   type Workflow,
 } from '../types.ts';
+import { anySignal } from '../utils/abort.ts';
+import { parseDuration } from '../utils/duration.ts';
 import { resolveUses, ResolveError, type ResolvedAction, type ResolvedWorkflow } from '../utils/resolve.ts';
+
+/** Exit code returned when the run is aborted by a SIGINT/SIGTERM. */
+export const SHUTDOWN_EXIT_CODE = 130;
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -39,6 +45,12 @@ export interface RunOptions extends LoadOptions {
    * dynamic env from setEnv.
    */
   inlineEnv?: Record<string, string>;
+  /**
+   * Top-level shutdown signal: aborts when SIGINT/SIGTERM hits the CLI. When it
+   * fires we let the in-flight step kill its subprocess(es), skip remaining
+   * steps and retries, and return SHUTDOWN_EXIT_CODE.
+   */
+  shutdownSignal?: AbortSignal;
 }
 
 export async function runRun({
@@ -49,6 +61,7 @@ export async function runRun({
   cwd,
   withPairs,
   inlineEnv = {},
+  shutdownSignal,
 }: RunOptions): Promise<number> {
   const { workflow, path } = loadWorkflow({ file, cwd });
 
@@ -99,23 +112,32 @@ export async function runRun({
       const step = secretsSteps[i]!;
       log.info(colors.gray(`> Secret ${i + 1}/${secretsSteps.length}: ${step.uses}`));
 
-      const code = await runActionOrWorkflowStep({
+      const outcome = await attemptStep({
         step,
-        workflow,
-        task: undefined,
-        inputs,
-        runCtx,
-        actionEnvBase,
-        shellEnvBase,
-        workflowPath: path,
-        taskName,
+        attemptCount: 1,
         log,
-        colors,
-        cycleStack: [`${path}::${taskName}`],
+        execute: (signal) =>
+          runActionOrWorkflowStep({
+            step,
+            workflow,
+            task: undefined,
+            inputs,
+            runCtx,
+            actionEnvBase,
+            shellEnvBase,
+            workflowPath: path,
+            taskName,
+            log,
+            colors,
+            cycleStack: [`${path}::${taskName}`],
+            shutdownSignal: signal,
+          }),
+        shutdownSignal,
       });
-      if (code !== 0) {
-        log.error(`secrets step ${i + 1}/${secretsSteps.length} failed with exit code ${code}`);
-        return code;
+      if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+      if (outcome.kind === 'failed') {
+        log.error(`secrets step ${i + 1}/${secretsSteps.length} failed with exit code ${outcome.exitCode}`);
+        return outcome.exitCode;
       }
     }
   }
@@ -132,6 +154,7 @@ export async function runRun({
     actionEnvBase,
     runCtx,
     cycleStack: [`${path}::${taskName}`],
+    shutdownSignal,
   });
 }
 
@@ -148,6 +171,7 @@ interface TaskRunArgs {
   runCtx: RunContext;
   /** Ancestor task chain: `${absoluteWorkflowPath}::${taskName}` entries. */
   cycleStack: string[];
+  shutdownSignal?: AbortSignal;
 }
 
 async function runTask(args: TaskRunArgs): Promise<number> {
@@ -163,6 +187,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     actionEnvBase,
     runCtx,
     cycleStack,
+    shutdownSignal,
   } = args;
 
   const defaultCwd = dirname(workflowPath);
@@ -175,24 +200,35 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     const label = stepLabel(step);
     log.info(colors.gray(`> Step ${i + 1}/${total}: ${label}`));
 
+    const attemptCount = (step.retries ?? 0) + 1;
+
     if (isActionStep(step)) {
-      const code = await runActionOrWorkflowStep({
+      const outcome = await attemptStep({
         step,
-        workflow,
-        task,
-        inputs,
-        runCtx,
-        actionEnvBase,
-        shellEnvBase,
-        workflowPath,
-        taskName,
+        attemptCount,
         log,
-        colors,
-        cycleStack,
+        shutdownSignal,
+        execute: (signal) =>
+          runActionOrWorkflowStep({
+            step,
+            workflow,
+            task,
+            inputs,
+            runCtx,
+            actionEnvBase,
+            shellEnvBase,
+            workflowPath,
+            taskName,
+            log,
+            colors,
+            cycleStack,
+            shutdownSignal: signal,
+          }),
       });
-      if (code !== 0) {
-        log.error(`step ${i + 1}/${total} failed with exit code ${code}`);
-        return code;
+      if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+      if (outcome.kind === 'failed') {
+        log.error(`step ${i + 1}/${total} failed with exit code ${outcome.exitCode}`);
+        return outcome.exitCode;
       }
       continue;
     }
@@ -226,65 +262,172 @@ async function runTask(args: TaskRunArgs): Promise<number> {
     log.debug(`  cwd: ${stepCwd}`);
     if (Object.keys(stepEnv).length > 0) log.debug(`  step env:`, stepEnv);
 
-    // Always allocate a $ZORB_OUTPUT file so `echo k=v >> $ZORB_OUTPUT` works
-    // even on steps without an `id:` (mirrors GitHub Actions' $GITHUB_OUTPUT).
-    // Outputs are only registered into the RunContext when an id is present.
-    const outputDir = mkdtempSync(join(tmpdir(), 'zorb-step-'));
-    const outputFile = join(outputDir, 'output');
-    writeFileSync(outputFile, '', { mode: 0o666 });
+    const outcome = await attemptStep({
+      step,
+      attemptCount,
+      log,
+      shutdownSignal,
+      execute: async (signal) => {
+        // Allocate a fresh $ZORB_OUTPUT file per attempt — a previous attempt's
+        // partial writes should not leak into the next one.
+        const outputDir = mkdtempSync(join(tmpdir(), 'zorb-step-'));
+        const outputFile = join(outputDir, 'output');
+        writeFileSync(outputFile, '', { mode: 0o666 });
 
-    let result;
-    try {
-      if (usesDocker) {
-        // Mount the host output file inside the container at a fixed path; the
-        // docker executor wires ZORB_OUTPUT to the in-container path so the
-        // shell command sees the right value regardless of host pathnames.
-        result = await executeDockerStep({
-          run: step.run,
-          env: effectiveEnv,
-          cwd: stepCwd,
-          docker: step.docker!,
-          shell: stepShell,
-          outputMount: { hostPath: outputFile, containerPath: '/zorb-output' },
-          mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
-        });
-      } else {
-        effectiveEnv.ZORB_OUTPUT = outputFile;
-        result = await executeShellStep({
-          run: step.run,
-          env: effectiveEnv,
-          cwd: stepCwd,
-          shell: stepShell,
-          mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
-        });
-      }
-
-      if (result.exitCode !== 0) {
-        log.error(`step ${i + 1}/${total} failed with exit code ${result.exitCode}`);
-        return result.exitCode;
-      }
-
-      if (step.id) {
         try {
-          const raw = readFileSync(outputFile, 'utf-8');
-          const outputs = parseShellOutputs(raw);
-          runCtx.setStepOutputs(step.id, outputs);
-          if (Object.keys(outputs).length > 0) log.debug(`  outputs:`, outputs);
-        } catch (e) {
-          if (e instanceof ShellOutputError) {
-            log.error(`step ${i + 1}/${total} produced invalid outputs: ${e.message}`);
-            return 1;
+          let result;
+          if (usesDocker) {
+            // Mount the host output file inside the container at a fixed path; the
+            // docker executor wires ZORB_OUTPUT to the in-container path so the
+            // shell command sees the right value regardless of host pathnames.
+            result = await executeDockerStep({
+              run: step.run,
+              env: effectiveEnv,
+              cwd: stepCwd,
+              docker: step.docker!,
+              shell: stepShell,
+              outputMount: { hostPath: outputFile, containerPath: '/zorb-output' },
+              mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
+              signal,
+            });
+          } else {
+            effectiveEnv.ZORB_OUTPUT = outputFile;
+            result = await executeShellStep({
+              run: step.run,
+              env: effectiveEnv,
+              cwd: stepCwd,
+              shell: stepShell,
+              mask: runCtx.hasSecrets ? (t) => runCtx.mask(t) : undefined,
+              signal,
+            });
           }
-          throw e;
+
+          // Only register outputs on a successful attempt — a failed (and
+          // possibly to-be-retried) attempt shouldn't poison `steps.<id>.outputs`.
+          if (result.exitCode === 0 && step.id) {
+            try {
+              const raw = readFileSync(outputFile, 'utf-8');
+              const outputs = parseShellOutputs(raw);
+              runCtx.setStepOutputs(step.id, outputs);
+              if (Object.keys(outputs).length > 0) log.debug(`  outputs:`, outputs);
+            } catch (e) {
+              if (e instanceof ShellOutputError) {
+                log.error(`step ${i + 1}/${total} produced invalid outputs: ${e.message}`);
+                return 1;
+              }
+              throw e;
+            }
+          }
+          return result.exitCode;
+        } finally {
+          rmSync(outputDir, { recursive: true, force: true });
         }
-      }
-    } finally {
-      rmSync(outputDir, { recursive: true, force: true });
+      },
+    });
+
+    if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+    if (outcome.kind === 'failed') {
+      log.error(`step ${i + 1}/${total} failed with exit code ${outcome.exitCode}`);
+      return outcome.exitCode;
     }
   }
 
   log.verbose(`completed ${total} step(s)`);
   return 0;
+}
+
+interface AttemptStepArgs {
+  step: { timeout?: string; retries?: number; backoff?: Backoff };
+  attemptCount: number;
+  log: Logger;
+  shutdownSignal?: AbortSignal;
+  /** Run one attempt of the step. Receives a per-attempt signal combining shutdown + timeout. */
+  execute: (signal: AbortSignal | undefined) => Promise<number>;
+}
+
+type AttemptOutcome = { kind: 'success' } | { kind: 'failed'; exitCode: number } | { kind: 'shutdown' };
+
+// Run a step with timeout/retry semantics. Returns 'shutdown' if the run-wide
+// signal aborted — the caller bails out with SHUTDOWN_EXIT_CODE.
+async function attemptStep(args: AttemptStepArgs): Promise<AttemptOutcome> {
+  const { step, attemptCount, log, shutdownSignal, execute } = args;
+  const timeoutMs = step.timeout ? parseDuration(step.timeout) : undefined;
+
+  let lastExit = 1;
+  for (let attempt = 1; attempt <= attemptCount; attempt++) {
+    if (shutdownSignal?.aborted) return { kind: 'shutdown' };
+
+    if (attempt > 1) {
+      log.info(`  retry ${attempt - 1}/${attemptCount - 1}`);
+    }
+
+    const timeoutCtl = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => timeoutCtl.abort('timeout'), timeoutMs);
+      (timer as { unref?: () => void }).unref?.();
+    }
+    const combined = anySignal([shutdownSignal, timeoutCtl.signal]);
+
+    try {
+      lastExit = await execute(combined);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    if (shutdownSignal?.aborted) return { kind: 'shutdown' };
+
+    if (timeoutCtl.signal.aborted) {
+      log.error(`  timed out after ${step.timeout}`);
+    }
+
+    if (lastExit === 0) return { kind: 'success' };
+
+    if (attempt < attemptCount) {
+      const delay = backoffDelay(step.backoff, attempt);
+      if (delay > 0) {
+        log.verbose(`  backing off ${delay}ms before next attempt`);
+        const slept = await interruptibleSleep(delay, shutdownSignal);
+        if (!slept) return { kind: 'shutdown' };
+      }
+    }
+  }
+
+  return { kind: 'failed', exitCode: lastExit };
+}
+
+// linear: 1s, 2s, 3s, ...  exponential: 1s, 2s, 4s, 8s, ...
+// `attempt` is the 1-based index of the attempt that JUST failed; the delay is
+// applied before the NEXT attempt. Both schedules base on 1s, mirroring common
+// retry-strategy defaults — small enough not to surprise users in dev, big
+// enough to give a flake a chance to recover.
+function backoffDelay(backoff: Backoff | undefined, attempt: number): number {
+  if (!backoff) return 0;
+  const base = 1000;
+  if (backoff === 'linear') return base * attempt;
+  return base * 2 ** (attempt - 1);
+}
+
+// Sleep that wakes early on shutdown so a long backoff doesn't trap us after
+// Ctrl-C. Returns false if shutdown interrupted, true if we slept the full time.
+function interruptibleSleep(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (signal?.aborted) return resolve(false);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, ms);
+    (timer as { unref?: () => void }).unref?.();
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 interface RunActionArgs {
@@ -300,6 +443,7 @@ interface RunActionArgs {
   log: Logger;
   colors: Colors;
   cycleStack: string[];
+  shutdownSignal?: AbortSignal;
 }
 
 async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
@@ -316,6 +460,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
     log,
     colors,
     cycleStack,
+    shutdownSignal,
   } = args;
 
   let resolved;
@@ -364,6 +509,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
       log,
       colors,
       cycleStack,
+      shutdownSignal,
     });
   }
 
@@ -379,6 +525,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
     workflowPath,
     taskName,
     stepEnv,
+    shutdownSignal,
   });
 }
 
@@ -394,10 +541,24 @@ interface ExecuteActionArgs {
   workflowPath: string;
   taskName: string;
   stepEnv: Record<string, string>;
+  shutdownSignal?: AbortSignal;
 }
 
 async function executeAction(args: ExecuteActionArgs): Promise<number> {
-  const { resolved, step, workflow, task, effectiveEnv, withMap, runCtx, log, workflowPath, taskName, stepEnv } = args;
+  const {
+    resolved,
+    step,
+    workflow,
+    task,
+    effectiveEnv,
+    withMap,
+    runCtx,
+    log,
+    workflowPath,
+    taskName,
+    stepEnv,
+    shutdownSignal,
+  } = args;
 
   const bin = resolveActionBin(resolved, step, task, workflow);
 
@@ -413,6 +574,7 @@ async function executeAction(args: ExecuteActionArgs): Promise<number> {
     context: { cwd: dirname(workflowPath), taskName, stepId: step.id },
     env: effectiveEnv,
     bin,
+    signal: shutdownSignal,
   });
 
   if (result.exitCode !== 0) return result.exitCode;
@@ -438,10 +600,11 @@ interface WorkflowRefArgs {
   log: Logger;
   colors: Colors;
   cycleStack: string[];
+  shutdownSignal?: AbortSignal;
 }
 
 async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
-  const { resolved, withMap, callerEffectiveEnv, runCtx, shellEnvBase, log, colors, cycleStack } = args;
+  const { resolved, withMap, callerEffectiveEnv, runCtx, shellEnvBase, log, colors, cycleStack, shutdownSignal } = args;
   const { workflowPath: calleeWfPath, taskName: calleeTaskName } = resolved;
 
   const cycleKey = `${calleeWfPath}::${calleeTaskName}`;
@@ -519,6 +682,7 @@ async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
     actionEnvBase: calleeActionEnvBase,
     runCtx,
     cycleStack: [...cycleStack, cycleKey],
+    shutdownSignal,
   });
 }
 
