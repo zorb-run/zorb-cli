@@ -5,17 +5,19 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "zorb": "./dist/bin.js"
+    "zorb": "./bin/zorb.cjs"
   },
   "scripts": {
     "dev": "bun src/cli.ts",
+    "build": "bun scripts/build.ts",
+    "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write ."
   },
   "files": [
+    "bin",
     "dist",
-    "runners",
     "zorb.schema.json"
   ],
   "dependencies": {

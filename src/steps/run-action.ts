@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve as resolvePath } from 'node:path';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 import { attachProcessAbort } from '../utils/abort.ts';
 import type { ResolvedAction } from '../utils/resolve.ts';
 
@@ -44,10 +44,28 @@ export const DEFAULT_BINS: Record<'js' | 'py', string> = {
   py: 'python3 {0}',
 };
 
-// src/steps/run-action.ts → ../../runners/. When packaged into a single binary
-// (A16) we'll resolve runners from the binary's adjacent libexec; for now this
-// is the only location.
-const RUNNERS_DIR = resolvePath(import.meta.dir, '..', '..', 'runners');
+// In dev (`bun src/cli.ts`), runners live at <repo>/runners/, two levels up from
+// this file. In a compiled binary, import.meta.dir resolves into Bun's virtual
+// `/$bunfs/...` filesystem and the real runners ship one level up from the
+// binary (dist/<platform>/zorb → dist/runners/). Computed once on first action
+// step.
+let cachedRunnersDir: string | undefined;
+function getRunnersDir(): string {
+  if (cachedRunnersDir !== undefined) return cachedRunnersDir;
+  if (!import.meta.dir.startsWith('/$bunfs')) {
+    cachedRunnersDir = resolvePath(import.meta.dir, '..', '..', 'runners');
+    return cachedRunnersDir;
+  }
+  const candidate = resolvePath(dirname(process.execPath), '..', 'runners');
+  if (!existsSync(candidate)) {
+    throw new ActionRunError(
+      `runners directory not found next to zorb binary (expected ${candidate}). ` +
+        `Reinstall zorb so the runners/ folder ships alongside the binary.`,
+    );
+  }
+  cachedRunnersDir = candidate;
+  return cachedRunnersDir;
+}
 
 export async function executeActionStep(opts: ExecuteActionOptions): Promise<ActionResult> {
   const dir = mkdtempSync(join(tmpdir(), 'zorb-action-'));
@@ -119,7 +137,7 @@ function buildRunnerCommand(
   inputFile: string,
   resultFile: string,
 ): string[] {
-  const runnerScript = join(RUNNERS_DIR, resolved.language === 'py' ? 'runner.py' : 'runner.cjs');
+  const runnerScript = join(getRunnersDir(), resolved.language === 'py' ? 'runner.py' : 'runner.cjs');
   const argv = renderBinTemplate(bin, runnerScript);
   if (argv.length === 0) {
     throw new ActionRunError(`bin template produced no command: '${bin}'`);

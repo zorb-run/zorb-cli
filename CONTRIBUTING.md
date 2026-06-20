@@ -24,7 +24,7 @@ bun install
 
 ## Running the CLI
 
-There's no built binary yet. For now, run the source directly:
+Run the source directly while iterating:
 
 ```sh
 bun src/cli.ts --version
@@ -38,14 +38,43 @@ The `dev` script is a shortcut:
 bun run dev -- run build
 ```
 
+To run the compiled binary the way users will, build it first:
+
+```sh
+bun scripts/build.ts --current
+./dist/$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')/zorb --version
+```
+
 ## Common commands
 
-| Command             | What it does                            |
-| ------------------- | --------------------------------------- |
-| `bun test`          | Run the test suite (unit + spawned CLI) |
-| `bun run typecheck` | Type-check with `tsc --noEmit`          |
-| `bun run format`    | Format with Prettier                    |
-| `bun run dev`       | Run the CLI from source                 |
+| Command                             | What it does                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| `bun test`                          | Run the test suite (unit + spawned CLI + binary smoke)                         |
+| `bun run typecheck`                 | Type-check with `tsc --noEmit`                                                 |
+| `bun run format`                    | Format with Prettier                                                           |
+| `bun run dev`                       | Run the CLI from source                                                        |
+| `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`          |
+| `bun scripts/build.ts --current`    | Build only the host-platform binary (used by smoke tests)                      |
+| `bun scripts/build.ts --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
+
+## Binary distribution
+
+`zorb` ships on NPM as a single package laid out like this:
+
+```
+bin/zorb.cjs           # dispatcher, registered as the package's `bin` entry
+dist/<platform>/zorb   # compiled binary for each of the four targets
+dist/runners/          # action runners (runner.cjs, runner.py), shared across targets
+```
+
+The dispatcher inspects `process.platform` + `process.arch` and execs `../dist/<host>/zorb` with the user's args. The
+compiled binary resolves `dirname(execPath)/../runners/` for code actions, so the four binaries share the single
+`dist/runners/` directory.
+
+`bun scripts/build.ts` produces the layout above.
+
+Set `ZORB_SKIP_SMOKE=1` to skip the binary smoke tests during local iteration (they add a one-off ~150ms compile to
+`bun test`).
 
 ## Project layout
 
