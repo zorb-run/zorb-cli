@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
+import { attachProcessAbort } from '../utils/abort.ts';
 import type { ResolvedAction } from '../utils/resolve.ts';
 
 export class ActionRunError extends Error {
@@ -18,6 +19,8 @@ export interface ActionResult {
   outputs: Record<string, unknown>;
   secrets: Array<{ name: string; value: string }>;
   env: Array<{ name: string; value: string }>;
+  /** True when the signal aborted the runner subprocess. */
+  aborted: boolean;
 }
 
 export interface ExecuteActionOptions {
@@ -29,6 +32,10 @@ export interface ExecuteActionOptions {
   env: Record<string, string>;
   /** Resolved bin template (validator guarantees a non-empty string containing {0}). */
   bin: string;
+  /** When the signal aborts, SIGTERM the runner then SIGKILL after the grace period. */
+  signal?: AbortSignal;
+  /** Grace period (ms) between SIGTERM and SIGKILL on abort. Defaults to 2000. */
+  killGraceMs?: number;
 }
 
 /** Built-in defaults used when no defaults.action.{lang}.bin and no step bin: is set. */
@@ -59,14 +66,20 @@ export async function executeActionStep(opts: ExecuteActionOptions): Promise<Act
       stdout: 'inherit',
       stderr: 'inherit',
     });
-    await proc.exited;
+    const detach = attachProcessAbort(proc, opts.signal, opts.killGraceMs ?? 2000);
+    try {
+      await proc.exited;
+    } finally {
+      detach();
+    }
     const exitCode = proc.exitCode ?? -1;
+    const aborted = opts.signal?.aborted ?? false;
 
     if (exitCode !== 0) {
-      return { exitCode, outputs: {}, secrets: [], env: [] };
+      return { exitCode, outputs: {}, secrets: [], env: [], aborted };
     }
 
-    return parseResultFile(resultFile);
+    return { ...parseResultFile(resultFile), aborted };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -95,6 +108,7 @@ function parseResultFile(resultFile: string): ActionResult {
     outputs: obj.outputs ?? {},
     secrets: obj.secrets ?? [],
     env: obj.env ?? [],
+    aborted: false,
   };
 }
 

@@ -171,6 +171,64 @@ echo "still in same shell: $FOO"`,
     }
   });
 
+  test('aborts a long-running subprocess via SIGTERM', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort('test'), 80);
+      const start = Date.now();
+      const result = await executeShellStep({
+        // exec replaces the shell with sleep so the signal hits sleep directly.
+        run: 'exec sleep 30',
+        env: {},
+        cwd: dir,
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+        signal: controller.signal,
+        killGraceMs: 1000,
+      });
+      const elapsed = Date.now() - start;
+      expect(result.aborted).toBe(true);
+      expect(result.exitCode).not.toBe(0);
+      // Generous bound — the test should not take anywhere near the 30s sleep.
+      expect(elapsed).toBeLessThan(3000);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('SIGKILLs after grace period when SIGTERM is ignored', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const controller = new AbortController();
+      // Ignore SIGTERM at the shell level so only SIGKILL can stop it. Sleep is
+      // kept short so even if SIGKILL leaves the child sleep orphaned (the shell
+      // is gone before it forwards), it ends quickly and doesn't slow the suite.
+      const run = `trap '' TERM
+sleep 2`;
+      setTimeout(() => controller.abort('test'), 80);
+      const start = Date.now();
+      const result = await executeShellStep({
+        run,
+        env: {},
+        cwd: dir,
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+        signal: controller.signal,
+        killGraceMs: 200,
+      });
+      const elapsed = Date.now() - start;
+      expect(result.aborted).toBe(true);
+      expect(result.exitCode).not.toBe(0);
+      // SIGKILL must have killed the shell well before sleep 2 would have finished.
+      expect(elapsed).toBeLessThan(1500);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('does NOT substitute ${{ }} expressions — passes them to the shell verbatim', async () => {
     const { dir, cleanup } = tmp();
     try {

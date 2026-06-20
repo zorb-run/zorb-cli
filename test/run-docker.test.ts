@@ -186,6 +186,7 @@ describe('executeDockerStep (via fake docker binary)', () => {
         stdout: 'pipe',
         stderr: 'pipe',
         dockerBin: join(fakeDir, 'docker'),
+        containerName: 'zorb-fixed',
       });
       expect(result.exitCode).toBe(0);
       const lines = (result.stdout ?? '').split('\n').filter((l) => l.length > 0);
@@ -193,6 +194,8 @@ describe('executeDockerStep (via fake docker binary)', () => {
         'run',
         '--rm',
         '-i',
+        '--name',
+        'zorb-fixed',
         '-e',
         'FOO=bar',
         '--workdir',

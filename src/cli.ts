@@ -11,7 +11,40 @@ import { InputError } from './inputs.ts';
 import { createLogger, type Logger, type LogLevel } from './logger.ts';
 import { COMMAND_HELP, TOP_LEVEL_HELP } from './help.ts';
 import { ActionRunError } from './steps/run-action.ts';
+import { DurationError } from './utils/duration.ts';
 import { getVersionString } from './version.ts';
+
+/**
+ * Installs SIGINT/SIGTERM handlers that abort the run via an AbortController.
+ * The first signal triggers a graceful shutdown — the in-flight step kills its
+ * subprocess and the orchestrator returns 130 (SIGINT) or 143 (SIGTERM). The
+ * signal name is the AbortController's reason so callers can branch on it.
+ * A second signal forces an immediate exit in case cleanup itself wedges.
+ */
+function installShutdownHandlers(log: Logger): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  let signalled = false;
+  const onSignal = (sig: NodeJS.Signals) => () => {
+    if (signalled) {
+      // Second hit: bail immediately. 128 + signal number, by convention.
+      process.exit(sig === 'SIGTERM' ? 143 : 130);
+    }
+    signalled = true;
+    log.verbose(`received ${sig}, shutting down`);
+    controller.abort(sig);
+  };
+  const onSigint = onSignal('SIGINT');
+  const onSigterm = onSignal('SIGTERM');
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      process.off('SIGINT', onSigint);
+      process.off('SIGTERM', onSigterm);
+    },
+  };
+}
 
 interface ParsedArgs {
   _: string[];
@@ -146,6 +179,7 @@ export async function main(rawArgs: string[]): Promise<number> {
         log.hint(`Run '${colors.bold('zorb help run')}' for details.`);
         return 1;
       }
+      const shutdown = installShutdownHandlers(log);
       try {
         return await runRun({
           log,
@@ -154,9 +188,12 @@ export async function main(rawArgs: string[]): Promise<number> {
           taskName: task,
           withPairs: args.with,
           inlineEnv,
+          shutdownSignal: shutdown.signal,
         });
       } catch (e) {
         return handleRunError(e, log);
+      } finally {
+        shutdown.dispose();
       }
     }
 
@@ -172,6 +209,7 @@ export async function main(rawArgs: string[]): Promise<number> {
         log.hint(`Run '${colors.bold('zorb help use')}' for details.`);
         return 1;
       }
+      const shutdown = installShutdownHandlers(log);
       try {
         return await runUse({
           log,
@@ -180,9 +218,12 @@ export async function main(rawArgs: string[]): Promise<number> {
           action,
           withPairs: args.with,
           inlineEnv,
+          shutdownSignal: shutdown.signal,
         });
       } catch (e) {
         return handleRunError(e, log);
+      } finally {
+        shutdown.dispose();
       }
     }
 
@@ -225,7 +266,12 @@ function handleEnvFileError(e: unknown, log: Logger): number {
 
 function handleRunError(e: unknown, log: Logger): number {
   if (e instanceof WorkflowError) return handleWorkflowError(e, log);
-  if (e instanceof InputError || e instanceof ExpressionError || e instanceof ActionRunError) {
+  if (
+    e instanceof InputError ||
+    e instanceof ExpressionError ||
+    e instanceof ActionRunError ||
+    e instanceof DurationError
+  ) {
     log.error(e.message);
     return 1;
   }

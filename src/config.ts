@@ -16,6 +16,7 @@ import type {
   ActionDefaults,
   ActionRuntimeDefaults,
   ActionStep,
+  Backoff,
   Defaults,
   Docker,
   EnvMap,
@@ -28,6 +29,7 @@ import type {
   WithValue,
   Workflow,
 } from './types.ts';
+import { DurationError, parseDuration } from './utils/duration.ts';
 
 export class WorkflowError extends Error {
   override readonly name = 'WorkflowError';
@@ -145,13 +147,14 @@ const DEFAULTS_KEYS = ['run', 'action'] as const;
 const RUN_DEFAULTS_KEYS = ['shell', 'cwd', 'env'] as const;
 const ACTION_DEFAULTS_KEYS = ['js', 'py'] as const;
 const ACTION_LANG_DEFAULTS_KEYS = ['bin'] as const;
-const STEP_BASE_KEYS = ['id', 'name', 'env'] as const;
+const STEP_BASE_KEYS = ['id', 'name', 'env', 'timeout', 'retries', 'backoff'] as const;
 const STEP_RUN_KEYS = [...STEP_BASE_KEYS, 'run', 'cwd', 'shell', 'docker'] as const;
 const STEP_USES_KEYS = [...STEP_BASE_KEYS, 'uses', 'with', 'bin'] as const;
 const STEP_ALL_KEYS = [...STEP_BASE_KEYS, 'run', 'cwd', 'shell', 'docker', 'uses', 'with', 'bin'] as const;
 const DOCKER_KEYS = ['image', 'volumes', 'network', 'workdir', 'platform', 'entrypoint', 'pull'] as const;
 const INPUT_TYPES: readonly InputType[] = ['string', 'number', 'boolean'];
 const DOCKER_PULL: ReadonlyArray<NonNullable<Docker['pull']>> = ['always', 'never', 'if-not-present'];
+const BACKOFFS: readonly Backoff[] = ['linear', 'exponential'];
 
 function locOf(node: Node | undefined, lc: LineCounter): { line?: number; col?: number } {
   if (!node?.range) return {};
@@ -494,7 +497,12 @@ function validateUsesStep(ctx: Ctx, map: YAMLMap, where: string): Step {
   return out;
 }
 
-function applyStepBase(ctx: Ctx, map: YAMLMap, where: string, target: { id?: string; name?: string; env?: EnvMap }) {
+function applyStepBase(
+  ctx: Ctx,
+  map: YAMLMap,
+  where: string,
+  target: { id?: string; name?: string; env?: EnvMap; timeout?: string; retries?: number; backoff?: Backoff },
+) {
   const idPair = getPair(map, 'id');
   if (idPair) {
     const id = requireString(ctx, idPair.value as Node, `${where}.id`);
@@ -512,6 +520,49 @@ function applyStepBase(ctx: Ctx, map: YAMLMap, where: string, target: { id?: str
   if (namePair) target.name = requireString(ctx, namePair.value as Node, `${where}.name`);
   const envPair = getPair(map, 'env');
   if (envPair) target.env = validateEnv(ctx, envPair.value as Node, `${where}.env`);
+
+  const timeoutPair = getPair(map, 'timeout');
+  if (timeoutPair) {
+    const raw = requireString(ctx, timeoutPair.value as Node, `${where}.timeout`);
+    try {
+      parseDuration(raw);
+    } catch (e) {
+      if (e instanceof DurationError) {
+        fail(
+          ctx,
+          timeoutPair.value as Node,
+          `${where}.timeout: ${e.message}`,
+          `use a duration like '30s', '5m', '500ms'`,
+        );
+      }
+      throw e;
+    }
+    target.timeout = raw;
+  }
+
+  const retriesPair = getPair(map, 'retries');
+  if (retriesPair) {
+    const n = requireInteger(ctx, retriesPair.value as Node, `${where}.retries`);
+    if (n < 0) fail(ctx, retriesPair.value as Node, `${where}.retries must be zero or greater`);
+    target.retries = n;
+  }
+
+  const backoffPair = getPair(map, 'backoff');
+  if (backoffPair) {
+    const v = requireString(ctx, backoffPair.value as Node, `${where}.backoff`);
+    if (!BACKOFFS.includes(v as Backoff)) {
+      fail(ctx, backoffPair.value as Node, `${where}.backoff must be one of: ${BACKOFFS.join(', ')}`);
+    }
+    if (!retriesPair) {
+      fail(
+        ctx,
+        backoffPair.key as Node,
+        `${where}.backoff requires 'retries:' to also be set`,
+        `add e.g. 'retries: 3' alongside backoff`,
+      );
+    }
+    target.backoff = v as Backoff;
+  }
 }
 
 function validateWith(ctx: Ctx, node: Node, where: string): WithMap {

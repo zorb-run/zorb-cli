@@ -23,6 +23,8 @@ export interface UseOptions extends LoadOptions {
    * declarations-only policy used by action steps in `zorb run`.
    */
   inlineEnv?: Record<string, string>;
+  /** Top-level shutdown signal — passed through to runRun for workflow refs and to the runner for direct actions. */
+  shutdownSignal?: AbortSignal;
 }
 
 export async function runUse({
@@ -33,6 +35,7 @@ export async function runUse({
   cwd,
   withPairs,
   inlineEnv = {},
+  shutdownSignal,
 }: UseOptions): Promise<number> {
   const baseCwd = resolvePath(cwd ?? process.cwd());
 
@@ -117,6 +120,7 @@ export async function runUse({
       taskName: resolved.taskName,
       withPairs,
       inlineEnv,
+      shutdownSignal,
     });
   }
 
@@ -129,6 +133,7 @@ export async function runUse({
     inlineEnv,
     log,
     colors,
+    shutdownSignal,
   });
 }
 
@@ -141,10 +146,11 @@ interface ExecuteDirectArgs {
   inlineEnv: Record<string, string>;
   log: Logger;
   colors: Colors;
+  shutdownSignal?: AbortSignal;
 }
 
 async function executeActionDirectly(args: ExecuteDirectArgs): Promise<number> {
-  const { resolved, workflow, actionArg, contextCwd, withMap, inlineEnv, log, colors } = args;
+  const { resolved, workflow, actionArg, contextCwd, withMap, inlineEnv, log, colors, shutdownSignal } = args;
 
   log.info(colors.bold(colors.cyan(actionArg)));
 
@@ -180,6 +186,7 @@ async function executeActionDirectly(args: ExecuteDirectArgs): Promise<number> {
     context: { cwd: contextCwd, taskName: '' },
     env,
     bin,
+    signal: shutdownSignal,
   });
 
   return result.exitCode;
