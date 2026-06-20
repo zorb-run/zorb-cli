@@ -17,8 +17,9 @@ import { getVersionString } from './version.ts';
 /**
  * Installs SIGINT/SIGTERM handlers that abort the run via an AbortController.
  * The first signal triggers a graceful shutdown — the in-flight step kills its
- * subprocess and the orchestrator returns SHUTDOWN_EXIT_CODE. A second signal
- * forces an immediate exit in case cleanup itself wedges.
+ * subprocess and the orchestrator returns 130 (SIGINT) or 143 (SIGTERM). The
+ * signal name is the AbortController's reason so callers can branch on it.
+ * A second signal forces an immediate exit in case cleanup itself wedges.
  */
 function installShutdownHandlers(log: Logger): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();

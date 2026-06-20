@@ -39,24 +39,3 @@ export function attachProcessAbort(proc: KillableProc, signal: AbortSignal | und
     signal.removeEventListener('abort', onAbort);
   };
 }
-
-// AbortSignal.any was added in Node 20.3+ / Bun. Tiny polyfill for safety.
-export function anySignal(signals: ReadonlyArray<AbortSignal | undefined>): AbortSignal {
-  const filtered = signals.filter((s): s is AbortSignal => s !== undefined);
-  // Native path: cheap & propagates reasons.
-  const Any = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
-  if (typeof Any === 'function') return Any(filtered);
-  const controller = new AbortController();
-  const onAbort = (sig: AbortSignal) => () => {
-    if (controller.signal.aborted) return;
-    controller.abort(sig.reason);
-  };
-  for (const s of filtered) {
-    if (s.aborted) {
-      controller.abort(s.reason);
-      return controller.signal;
-    }
-    s.addEventListener('abort', onAbort(s), { once: true });
-  }
-  return controller.signal;
-}

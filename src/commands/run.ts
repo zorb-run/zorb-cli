@@ -24,12 +24,14 @@ import {
   type WithValue,
   type Workflow,
 } from '../types.ts';
-import { anySignal } from '../utils/abort.ts';
 import { parseDuration } from '../utils/duration.ts';
 import { resolveUses, ResolveError, type ResolvedAction, type ResolvedWorkflow } from '../utils/resolve.ts';
 
-/** Exit code returned when the run is aborted by a SIGINT/SIGTERM. */
-export const SHUTDOWN_EXIT_CODE = 130;
+// Conventional Unix exit codes: 128 + signal number. SIGINT = 2 → 130, SIGTERM = 15 → 143.
+// installShutdownHandlers() aborts the controller with the signal name as the reason.
+function shutdownExitCode(signal: AbortSignal | undefined): number {
+  return signal?.reason === 'SIGTERM' ? 143 : 130;
+}
 
 export interface RunOptions extends LoadOptions {
   log: Logger;
@@ -48,7 +50,7 @@ export interface RunOptions extends LoadOptions {
   /**
    * Top-level shutdown signal: aborts when SIGINT/SIGTERM hits the CLI. When it
    * fires we let the in-flight step kill its subprocess(es), skip remaining
-   * steps and retries, and return SHUTDOWN_EXIT_CODE.
+   * steps and retries, and return 130 (SIGINT) or 143 (SIGTERM).
    */
   shutdownSignal?: AbortSignal;
 }
@@ -134,7 +136,7 @@ export async function runRun({
           }),
         shutdownSignal,
       });
-      if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+      if (outcome.kind === 'shutdown') return shutdownExitCode(shutdownSignal);
       if (outcome.kind === 'failed') {
         log.error(`secrets step ${i + 1}/${secretsSteps.length} failed with exit code ${outcome.exitCode}`);
         return outcome.exitCode;
@@ -225,7 +227,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
             shutdownSignal: signal,
           }),
       });
-      if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+      if (outcome.kind === 'shutdown') return shutdownExitCode(shutdownSignal);
       if (outcome.kind === 'failed') {
         log.error(`step ${i + 1}/${total} failed with exit code ${outcome.exitCode}`);
         return outcome.exitCode;
@@ -325,7 +327,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
       },
     });
 
-    if (outcome.kind === 'shutdown') return SHUTDOWN_EXIT_CODE;
+    if (outcome.kind === 'shutdown') return shutdownExitCode(shutdownSignal);
     if (outcome.kind === 'failed') {
       log.error(`step ${i + 1}/${total} failed with exit code ${outcome.exitCode}`);
       return outcome.exitCode;
@@ -348,7 +350,7 @@ interface AttemptStepArgs {
 type AttemptOutcome = { kind: 'success' } | { kind: 'failed'; exitCode: number } | { kind: 'shutdown' };
 
 // Run a step with timeout/retry semantics. Returns 'shutdown' if the run-wide
-// signal aborted — the caller bails out with SHUTDOWN_EXIT_CODE.
+// signal aborted — the caller bails out with shutdownExitCode().
 async function attemptStep(args: AttemptStepArgs): Promise<AttemptOutcome> {
   const { step, attemptCount, log, shutdownSignal, execute } = args;
   const timeoutMs = step.timeout ? parseDuration(step.timeout) : undefined;
@@ -361,23 +363,38 @@ async function attemptStep(args: AttemptStepArgs): Promise<AttemptOutcome> {
       log.info(`  retry ${attempt - 1}/${attemptCount - 1}`);
     }
 
-    const timeoutCtl = new AbortController();
+    // Combine the run-wide shutdown signal with the per-attempt timeout into a
+    // single AbortSignal handed to the executor. We do this locally (rather than
+    // via a generic anySignal helper) so we can detach the parent-signal
+    // listener after each attempt — otherwise listener references accumulate on
+    // shutdownSignal across every step and every retry.
+    const stepCtl = new AbortController();
+    const onParentAbort = () => stepCtl.abort(shutdownSignal?.reason);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    if (shutdownSignal?.aborted) {
+      stepCtl.abort(shutdownSignal.reason);
+    } else {
+      shutdownSignal?.addEventListener('abort', onParentAbort, { once: true });
+    }
+    let timedOut = false;
     if (timeoutMs !== undefined) {
-      timer = setTimeout(() => timeoutCtl.abort('timeout'), timeoutMs);
+      timer = setTimeout(() => {
+        timedOut = true;
+        stepCtl.abort('timeout');
+      }, timeoutMs);
       (timer as { unref?: () => void }).unref?.();
     }
-    const combined = anySignal([shutdownSignal, timeoutCtl.signal]);
 
     try {
-      lastExit = await execute(combined);
+      lastExit = await execute(stepCtl.signal);
     } finally {
       if (timer) clearTimeout(timer);
+      shutdownSignal?.removeEventListener('abort', onParentAbort);
     }
 
     if (shutdownSignal?.aborted) return { kind: 'shutdown' };
 
-    if (timeoutCtl.signal.aborted) {
+    if (timedOut) {
       log.error(`  timed out after ${step.timeout}`);
     }
 

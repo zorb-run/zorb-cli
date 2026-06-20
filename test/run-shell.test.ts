@@ -202,9 +202,11 @@ echo "still in same shell: $FOO"`,
     const { dir, cleanup } = tmp();
     try {
       const controller = new AbortController();
-      // Ignore SIGTERM at the shell level; only SIGKILL can stop it.
+      // Ignore SIGTERM at the shell level so only SIGKILL can stop it. Sleep is
+      // kept short so even if SIGKILL leaves the child sleep orphaned (the shell
+      // is gone before it forwards), it ends quickly and doesn't slow the suite.
       const run = `trap '' TERM
-sleep 30`;
+sleep 2`;
       setTimeout(() => controller.abort('test'), 80);
       const start = Date.now();
       const result = await executeShellStep({
@@ -220,7 +222,8 @@ sleep 30`;
       const elapsed = Date.now() - start;
       expect(result.aborted).toBe(true);
       expect(result.exitCode).not.toBe(0);
-      expect(elapsed).toBeLessThan(3000);
+      // SIGKILL must have killed the shell well before sleep 2 would have finished.
+      expect(elapsed).toBeLessThan(1500);
     } finally {
       cleanup();
     }

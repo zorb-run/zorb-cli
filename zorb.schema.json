@@ -199,7 +199,7 @@
         "timeout": {
           "description": "Maximum duration the step is allowed to run before it is killed. Format: e.g. '500ms', '30s', '5m', '1h'.",
           "type": "string",
-          "pattern": "^\\s*\\d+(?:\\.\\d+)?\\s*(?:ms|s|m|h)\\s*$"
+          "pattern": "^\\s*(?:0*[1-9][0-9]*(?:\\.[0-9]+)?|0*\\.0*[1-9][0-9]*)\\s*(?:ms|s|m|h)\\s*$"
         },
         "retries": {
           "description": "Number of additional attempts after the first if the step fails. Total attempts = retries + 1.",
