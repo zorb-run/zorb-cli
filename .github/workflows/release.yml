@@ -27,19 +27,46 @@ jobs:
       # runners into dist/runners/ (shared across binaries).
       - run: bun run build
 
+      # Layout per tarball:
+      #   zorb-<platform>/bin/zorb
+      #   zorb-<platform>/runners/...
+      # The binary resolves runners via `dirname(execPath)/../runners` (see
+      # src/steps/run-action.ts), so `bin/zorb` paired with a sibling
+      # `runners/` is what makes code actions find their runtime.
       - name: Package binaries
         run: |
           set -euo pipefail
           mkdir -p artifacts staging
           for target in darwin-x64 darwin-arm64 linux-x64 linux-arm64; do
             stage="staging/zorb-$target"
-            mkdir -p "$stage"
-            cp "dist/$target/zorb" "$stage/zorb"
+            mkdir -p "$stage/bin"
+            cp "dist/$target/zorb" "$stage/bin/zorb"
             cp -R dist/runners "$stage/runners"
             tar -C staging -czf "artifacts/zorb-$target.tar.gz" "zorb-$target"
           done
           cd artifacts
           sha256sum zorb-*.tar.gz > SHA256SUMS
+
+      # Smoke the linux-x64 tarball end-to-end: confirms the layout the
+      # compiled binary sees at runtime (binary launches, runner discovery
+      # finds runners/, code action returns outputs).
+      - name: Smoke test linux-x64 tarball
+        run: |
+          set -euo pipefail
+          smoke=$(mktemp -d)
+          tar -C "$smoke" -xzf artifacts/zorb-linux-x64.tar.gz
+          "$smoke/zorb-linux-x64/bin/zorb" --version
+          cat > "$smoke/action.cjs" <<'JS'
+          module.exports.action = () => ({ ok: 'true' });
+          JS
+          cat > "$smoke/zorb.yml" <<'YML'
+          tasks:
+            smoke:
+              steps:
+                - run: echo hello
+                - uses: ./action.cjs
+          YML
+          "$smoke/zorb-linux-x64/bin/zorb" run smoke -f "$smoke/zorb.yml"
 
       - name: Upload assets to release
         env:
