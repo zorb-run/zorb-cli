@@ -4,6 +4,7 @@ Usage:
   zorb <command> [options]
 
 Commands:
+  init               Scaffold a starter zorb.yml in the current directory
   run <task>         Run a task from zorb.yml
   use <action>       Run an action directly, no zorb.yml needed
   list               List tasks defined in zorb.yml
@@ -24,6 +25,18 @@ Global options:
 
 Run 'zorb help <command>' for details on a specific command.`;
 
+const HELP_INIT = `zorb init — scaffold a starter zorb.yml in the current directory
+
+Usage:
+  zorb init
+
+Errors if a zorb.yml already exists in the current directory. The scaffold
+includes the editor-support schema header and a single example task you can
+edit or replace.
+
+Examples:
+  zorb init`;
+
 const HELP_RUN = `zorb run — run a task from zorb.yml
 
 Usage:
@@ -39,7 +52,8 @@ Options:
 Examples:
   zorb run build
   zorb run deploy --with environment=staging --with dry-run=true
-  zorb run test -e CI=true -e LOG_LEVEL=debug`;
+  zorb run test -e CI=true -e LOG_LEVEL=debug
+  zorb run test --watch 'src/**/*.{ts,tsx}'`;
 
 const HELP_USE = `zorb use — run an action directly, no zorb.yml needed
 
@@ -79,6 +93,7 @@ Options:
 Prints each task with its description and any required inputs.`;
 
 export const COMMAND_HELP: Record<string, string> = {
+  init: HELP_INIT,
   run: HELP_RUN,
   use: HELP_USE,
   list: HELP_LIST,

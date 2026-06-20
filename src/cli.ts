@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
+import { runInit } from './commands/init.ts';
 import { runList } from './commands/list.ts';
 import { runRun } from './commands/run.ts';
+import { runRunWithWatch } from './commands/run-watch.ts';
 import { runUse } from './commands/use.ts';
 import { WorkflowError } from './config.ts';
 import { EnvFileError, parseEnvFile, parseInlineEnv } from './envfile.ts';
@@ -119,7 +121,9 @@ export async function main(rawArgs: string[]): Promise<number> {
   }
 
   const wantsHelpOnly =
-    command === 'help' || (args.help && (command === 'run' || command === 'use' || command === 'list'));
+    command === 'help' ||
+    command === 'init' ||
+    (args.help && (command === 'run' || command === 'use' || command === 'list'));
 
   // Inline env vars (--env-file then -e/--env) are kept separate from
   // process.env so actions can be given a strict, declaration-only environment
@@ -167,6 +171,14 @@ export async function main(rawArgs: string[]): Promise<number> {
       return 0;
     }
 
+    case 'init': {
+      if (args.help) {
+        console.log(COMMAND_HELP.init);
+        return 0;
+      }
+      return runInit({ log, colors });
+    }
+
     case 'run': {
       if (args.help) {
         console.log(COMMAND_HELP.run);
@@ -181,6 +193,18 @@ export async function main(rawArgs: string[]): Promise<number> {
       }
       const shutdown = installShutdownHandlers(log);
       try {
+        if (args.watch) {
+          return await runRunWithWatch({
+            log,
+            colors,
+            file: args.file,
+            taskName: task,
+            withPairs: args.with,
+            inlineEnv,
+            shutdownSignal: shutdown.signal,
+            watchGlob: args.watch,
+          });
+        }
         return await runRun({
           log,
           colors,
