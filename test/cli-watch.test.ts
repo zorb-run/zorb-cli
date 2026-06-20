@@ -210,4 +210,26 @@ describe('zorb run --watch', () => {
       cleanup();
     }
   });
+
+  test('exits with 143 on SIGTERM so orchestrators can detect it', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeWorkflow(dir);
+      mkdirSync(join(dir, 'src'));
+      writeFileSync(join(dir, 'src', 'a.txt'), 'hello');
+
+      const wp = startWatch(['run', 'tick', '--watch', 'src/**/*.txt'], dir);
+      try {
+        await wp.waitFor('watching for changes', { timeoutMs: 8000 });
+        wp.proc.kill('SIGTERM');
+        await wp.proc.exited;
+        expect(wp.proc.exitCode).toBe(143);
+      } finally {
+        // Make sure the process is gone even if assertions fail.
+        if (wp.proc.exitCode === null) wp.proc.kill('SIGKILL');
+      }
+    } finally {
+      cleanup();
+    }
+  });
 });

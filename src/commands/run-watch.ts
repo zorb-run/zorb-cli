@@ -125,7 +125,11 @@ export async function runRunWithWatch(opts: RunWatchOptions): Promise<number> {
     if (debounceTimer) clearTimeout(debounceTimer);
   }
 
-  return 0;
+  // SIGINT (Ctrl-C) is the expected way to stop a watcher — treat it as a
+  // clean exit. SIGTERM, on the other hand, almost always means a parent
+  // process/supervisor is shutting us down; propagate the conventional 143
+  // so orchestrators can distinguish "user asked to stop" from "we got killed".
+  return shutdownSignal?.reason === 'SIGTERM' ? 143 : 0;
 }
 
 function resolveWatchRoot(opts: RunOptions): string | undefined {
