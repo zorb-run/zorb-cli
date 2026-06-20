@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import minimist from 'minimist';
 import { createColors, shouldColor } from './colors.ts';
+import { runInit } from './commands/init.ts';
 import { runList } from './commands/list.ts';
 import { runRun } from './commands/run.ts';
 import { runUse } from './commands/use.ts';
@@ -119,7 +120,9 @@ export async function main(rawArgs: string[]): Promise<number> {
   }
 
   const wantsHelpOnly =
-    command === 'help' || (args.help && (command === 'run' || command === 'use' || command === 'list'));
+    command === 'help' ||
+    command === 'init' ||
+    (args.help && (command === 'run' || command === 'use' || command === 'list'));
 
   // Inline env vars (--env-file then -e/--env) are kept separate from
   // process.env so actions can be given a strict, declaration-only environment
@@ -165,6 +168,14 @@ export async function main(rawArgs: string[]): Promise<number> {
       }
       console.log(text);
       return 0;
+    }
+
+    case 'init': {
+      if (args.help) {
+        console.log(COMMAND_HELP.init);
+        return 0;
+      }
+      return runInit({ log, colors });
     }
 
     case 'run': {
