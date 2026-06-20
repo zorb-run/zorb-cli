@@ -1,0 +1,52 @@
+name: Smoke compiled binary
+description: >-
+  Packages a built zorb binary into the same tarball layout the release
+  workflow ships (zorb-<target>/bin/zorb + zorb-<target>/runners/),
+  extracts it, runs --version, and executes a tiny code-action workflow
+  to verify runner discovery from the extracted layout.
+
+inputs:
+  dist-dir:
+    description: Directory containing <target>/zorb and runners/ (output of `bun run build`).
+    required: false
+    default: dist
+  target:
+    description: Platform target to smoke. Must be runnable on the host runner.
+    required: false
+    default: linux-x64
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        target="${{ inputs.target }}"
+        dist="${{ inputs.dist-dir }}"
+
+        smoke="$(mktemp -d)"
+        stage="$smoke/stage/zorb-$target"
+        mkdir -p "$stage/bin"
+        cp "$dist/$target/zorb" "$stage/bin/zorb"
+        cp -R "$dist/runners" "$stage/runners"
+        tar -C "$smoke/stage" -czf "$smoke/zorb-$target.tar.gz" "zorb-$target"
+
+        extract="$smoke/extract"
+        mkdir -p "$extract"
+        tar -C "$extract" -xzf "$smoke/zorb-$target.tar.gz"
+        zorb="$extract/zorb-$target/bin/zorb"
+
+        "$zorb" --version
+
+        cat > "$smoke/action.cjs" <<'JS'
+        module.exports.action = () => ({ ok: 'true' });
+        JS
+        cat > "$smoke/zorb.yml" <<'YML'
+        tasks:
+          smoke:
+            steps:
+              - run: echo hello
+              - uses: ./action.cjs
+        YML
+
+        "$zorb" run smoke -f "$smoke/zorb.yml"

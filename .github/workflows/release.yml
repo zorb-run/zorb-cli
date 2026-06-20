@@ -47,26 +47,10 @@ jobs:
           cd artifacts
           sha256sum zorb-*.tar.gz > SHA256SUMS
 
-      # Smoke the linux-x64 tarball end-to-end: confirms the layout the
-      # compiled binary sees at runtime (binary launches, runner discovery
-      # finds runners/, code action returns outputs).
-      - name: Smoke test linux-x64 tarball
-        run: |
-          set -euo pipefail
-          smoke=$(mktemp -d)
-          tar -C "$smoke" -xzf artifacts/zorb-linux-x64.tar.gz
-          "$smoke/zorb-linux-x64/bin/zorb" --version
-          cat > "$smoke/action.cjs" <<'JS'
-          module.exports.action = () => ({ ok: 'true' });
-          JS
-          cat > "$smoke/zorb.yml" <<'YML'
-          tasks:
-            smoke:
-              steps:
-                - run: echo hello
-                - uses: ./action.cjs
-          YML
-          "$smoke/zorb-linux-x64/bin/zorb" run smoke -f "$smoke/zorb.yml"
+      # Confirms the layout the compiled binary sees at runtime (binary
+      # launches, runner discovery finds runners/, code action returns
+      # outputs). Same action runs on every PR.
+      - uses: ./.github/actions/smoke-binary
 
       - name: Upload assets to release
         env:

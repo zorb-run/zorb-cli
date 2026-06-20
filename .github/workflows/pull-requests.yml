@@ -22,3 +22,6 @@ jobs:
       # bun target that breaks. Smoke tests above already exercised the
       # host-platform binary end-to-end.
       - run: bun run build
+      # End-to-end smoke against the release tarball layout — same action the
+      # release workflow uses to gate uploads.
+      - uses: ./.github/actions/smoke-binary
