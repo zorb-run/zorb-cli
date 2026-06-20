@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Build the `zorb` package's compiled binaries.
 //
-// Each target produces dist/<platform>/{zorb,runners/}. The `zorb` package
-// itself ships all of these under dist/, and bin/zorb.js (the user-installed
+// Each build produces dist/<platform>/zorb plus a shared dist/runners/ directory.
+// The `zorb` package ships these under dist/, and bin/zorb.cjs (the user-installed
 // command) execs the one matching the host platform at runtime.
 //
 // Usage:
@@ -28,7 +28,15 @@ export const PLATFORMS: Record<Platform, { bunTarget: Bun.Build.CompileTarget }>
 export function currentPlatform(): Platform {
   const p = platform();
   const a = arch();
-  const key = `${p === 'darwin' ? 'darwin' : 'linux'}-${a === 'arm64' ? 'arm64' : 'x64'}` as Platform;
+
+  if (p !== 'darwin' && p !== 'linux') {
+    throw new Error(`unsupported host platform: ${p}/${a}`);
+  }
+  if (a !== 'arm64' && a !== 'x64') {
+    throw new Error(`unsupported host platform: ${p}/${a}`);
+  }
+
+  const key = `${p}-${a}` as Platform;
   if (!(key in PLATFORMS)) {
     throw new Error(`unsupported host platform: ${p}/${a}`);
   }

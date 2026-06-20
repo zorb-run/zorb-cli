@@ -55,7 +55,7 @@ bun scripts/build.ts --current
 | `bun run dev`                       | Run the CLI from source                                                        |
 | `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`          |
 | `bun scripts/build.ts --current`    | Build only the host-platform binary (used by smoke tests)                      |
-| `bun scripts/build.ts --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `-arm64` |
+| `bun scripts/build.ts --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
 
 ## Binary distribution
 
