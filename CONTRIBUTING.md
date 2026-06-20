@@ -76,6 +76,28 @@ compiled binary resolves `dirname(execPath)/../runners/` for code actions, so th
 Set `ZORB_SKIP_SMOKE=1` to skip the binary smoke tests during local iteration (they add a one-off ~150ms compile to
 `bun test`).
 
+## Cutting a release
+
+Releases live in [GitHub Releases](https://github.com/zorb-run/zorb-cli/releases). The `.github/workflows/release.yml`
+workflow listens for `release: published` and uploads the platform binaries to the release.
+
+1. Bump `version` in `package.json` and commit (`chore: release vX.Y.Z`).
+2. Push the commit, then tag and push the tag:
+   ```sh
+   git push origin main
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+   Pushing only the tag would leave the bump commit local — the release would point at a SHA the remote branch doesn't
+   know about.
+3. Draft a release against that tag on GitHub (or `gh release create vX.Y.Z --draft`), write the notes, then publish.
+4. The workflow builds all four binaries on `ubuntu-latest`, packages each as `zorb-<platform>.tar.gz` (containing
+   `zorb-<platform>/bin/zorb` + `zorb-<platform>/runners/`), generates a `SHA256SUMS` file, and attaches the lot to the
+   release. The same step extracts the linux-x64 tarball and runs a tiny code-action workflow to verify runner
+   discovery before publishing.
+
+Re-publishing the same release re-runs the workflow; `gh release upload --clobber` overwrites any existing assets.
+
 ## Project layout
 
 ```
