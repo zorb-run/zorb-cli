@@ -52,7 +52,8 @@ Options:
 Examples:
   zorb run build
   zorb run deploy --with environment=staging --with dry-run=true
-  zorb run test -e CI=true -e LOG_LEVEL=debug`;
+  zorb run test -e CI=true -e LOG_LEVEL=debug
+  zorb run test --watch 'src/**/*.{ts,tsx}'`;
 
 const HELP_USE = `zorb use — run an action directly, no zorb.yml needed
 
