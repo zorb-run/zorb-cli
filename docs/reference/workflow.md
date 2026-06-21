@@ -128,7 +128,7 @@ Common fields:
 | `name`    | string   | Display name shown in the step header. Optional.                                                         |
 | `id`      | string   | Identifier used by later steps to read this step's outputs. Optional. See [Step outputs](#step-outputs). |
 | `env`     | mapping  | Env vars added on top of the task's `env:`, scoped to this step only.                                    |
-| `timeout` | duration | Fail the step if it runs longer than this. Format: `30s`, `5m`, `1h`, or `1h30m`.                        |
+| `timeout` | duration | Fail the step if it runs longer than this. Format: a single number + unit — `500ms`, `30s`, `5m`, `1.5h`. |
 | `retries` | integer  | Number of additional attempts after the first. `retries: 2` means up to three attempts total.            |
 | `backoff` | string   | Delay strategy between retries. `linear` (1s, 2s, 3s, …) or `exponential` (1s, 2s, 4s, …).               |
 
