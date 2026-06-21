@@ -221,9 +221,10 @@ action authors is documented in [Writing actions](../guide/actions.md).
    resolves to a task in the indicated `zorb.yml`. Cross-file references work the same as in-file ones, except the
    referenced task only sees the inputs supplied via `with:`. Cycles are detected and error.
 2. **Local file** — `./path/to/file.action` resolves to the file with one of the supported extensions, tried in order:
-   `.ts`, `.mjs`, `.cjs`, `.js`, `.py`. If more than one extension matches the same extensionless path, the first one
-   wins and zorb prints a warning listing the alternatives so the ambiguity is visible. The file is loaded by the
-   matching runner.
+   `.ts`, `.mjs`, `.cjs`, `.js`, `.py`. The `uses:` value itself must not include the runtime extension — write
+   `./path/to/file.action`, not `./path/to/file.action.ts`; zorb detects the runtime from the file on disk. If more
+   than one extension matches the same path, the first one wins and zorb prints a warning listing the alternatives.
+   The file is loaded by the matching runner.
 3. **NPM package** — `@scope/package/path` (e.g. `@zorb/aws/s3/sync`) resolves via `node_modules` relative to the
    workflow's directory. Missing `@zorb/*` packages error with an install hint.
 

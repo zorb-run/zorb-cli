@@ -24,7 +24,7 @@ tasks:
   greet:
     steps:
       - id: g
-        uses: ./scripts/greet.action.cjs
+        uses: ./scripts/greet.action
         with:
           name: world
       - name: Show what we returned
@@ -137,7 +137,7 @@ return { tag: 'v1.2.3', commits: 14, dirty: false };
 
 ```yml
 - id: build
-  uses: ./scripts/build.action.js
+  uses: ./scripts/build.action
 - env:
     TAG: ${{ steps.build.outputs.tag }}
     COMMITS: ${{ steps.build.outputs.commits }}
@@ -182,7 +182,8 @@ sandboxed this way.)
 
 Resolution is the same for both:
 
-- `uses: ./relative/path.action.ts` — file on disk, resolved against the workflow's directory.
+- `uses: ./relative/path.action` — file on disk, resolved against the workflow's directory. The runtime extension is
+  detected on disk; don't write it into `uses:`.
 - `uses: @scope/package/path` — resolved via `node_modules` relative to the workflow. The package is expected to expose
   a file at the requested subpath; e.g. `@zorb/aws/s3/sync` looks for `node_modules/@zorb/aws/s3/sync.{js,mjs,…}`.
 

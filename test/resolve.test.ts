@@ -18,23 +18,12 @@ function tmp(): { dir: string; cleanup: () => void } {
 }
 
 describe('resolveUses — local paths', () => {
-  test('resolves a path with an explicit recognised extension', () => {
-    const { dir, cleanup } = tmp();
-    try {
-      writeFileSync(join(dir, 'foo.js'), 'module.exports = {};');
-      const r = asAction(resolveUses({ uses: './foo.js', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'foo.js'));
-      expect(r.language).toBe('js');
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('treats .py as Python', () => {
+  test('detects a .py file as Python', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'foo.py'), 'def action(i, c): return {}');
-      const r = asAction(resolveUses({ uses: './foo.py', fromFile: join(dir, 'zorb.yml') }));
+      const r = asAction(resolveUses({ uses: './foo', fromFile: join(dir, 'zorb.yml') }));
+      expect(r.path).toBe(join(dir, 'foo.py'));
       expect(r.language).toBe('py');
     } finally {
       cleanup();
@@ -113,29 +102,12 @@ describe('resolveUses — local paths', () => {
     }
   });
 
-  test('does not warn for explicit-extension paths even if siblings exist', () => {
+  test('absolute paths resolve via the same extension detection', () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'pick.js'), '');
-      writeFileSync(join(dir, 'pick.ts'), '');
-      const warnings: string[] = [];
-      const r = asAction(
-        resolveUses({ uses: './pick.js', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
-      );
-      expect(r.path).toBe(join(dir, 'pick.js'));
-      expect(warnings).toHaveLength(0);
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('absolute paths are resolved verbatim', () => {
-    const { dir, cleanup } = tmp();
-    try {
-      const abs = join(dir, 'abs.js');
-      writeFileSync(abs, '');
-      const r = asAction(resolveUses({ uses: abs, fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(abs);
+      writeFileSync(join(dir, 'abs.ts'), '');
+      const r = asAction(resolveUses({ uses: join(dir, 'abs'), fromFile: join(dir, 'zorb.yml') }));
+      expect(r.path).toBe(join(dir, 'abs.ts'));
     } finally {
       cleanup();
     }
@@ -146,9 +118,9 @@ describe('resolveUses — local paths', () => {
     try {
       const sub = join(dir, 'sub');
       mkdirSync(sub);
-      writeFileSync(join(dir, 'outer.js'), '');
-      const r = asAction(resolveUses({ uses: '../outer.js', fromFile: join(sub, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'outer.js'));
+      writeFileSync(join(dir, 'outer.ts'), '');
+      const r = asAction(resolveUses({ uses: '../outer', fromFile: join(sub, 'zorb.yml') }));
+      expect(r.path).toBe(join(dir, 'outer.ts'));
     } finally {
       cleanup();
     }
@@ -314,41 +286,15 @@ describe('resolveUses — cross-file workflow refs', () => {
   });
 });
 
-describe('resolveUses — explicit-extension precedence', () => {
-  test('./zorb.js with a recognised extension resolves as an action file, not a workflow ref', () => {
-    const { dir, cleanup } = tmp();
-    try {
-      writeFileSync(join(dir, 'zorb.js'), 'module.exports.action = () => ({});');
-      const r = asAction(resolveUses({ uses: './zorb.js', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'zorb.js'));
-      expect(r.language).toBe('js');
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('./zorb.py resolves as a Python action file', () => {
-    const { dir, cleanup } = tmp();
-    try {
-      writeFileSync(join(dir, 'zorb.py'), 'def action(i, c): return {}');
-      const r = asAction(resolveUses({ uses: './zorb.py', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'zorb.py'));
-      expect(r.language).toBe('py');
-    } finally {
-      cleanup();
-    }
-  });
-});
-
 describe('resolveUses — errors', () => {
   test('does NOT treat names that merely start with `zorb` as cross-file', () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'zorb-helper.js'), '');
-      const r = asAction(resolveUses({ uses: './zorb-helper.js', fromFile: join(dir, 'zorb.yml') }));
+      writeFileSync(join(dir, 'zorb-helper.ts'), '');
+      const r = asAction(resolveUses({ uses: './zorb-helper', fromFile: join(dir, 'zorb.yml') }));
       expect(r.kind).toBe('action');
       if (r.kind !== 'action') throw new Error('expected action');
-      expect(r.path).toBe(join(dir, 'zorb-helper.js'));
+      expect(r.path).toBe(join(dir, 'zorb-helper.ts'));
     } finally {
       cleanup();
     }
@@ -364,7 +310,7 @@ describe('resolveUses — errors', () => {
         expect(e).toBeInstanceOf(ResolveError);
         const err = e as ResolveError;
         expect(err.message).toContain(`could not resolve action './missing'`);
-        expect(err.hint).toContain('.js');
+        expect(err.hint).toContain('.ts');
         expect(err.hint).toContain('.py');
       }
     } finally {
@@ -372,7 +318,25 @@ describe('resolveUses — errors', () => {
     }
   });
 
-  test('errors when the explicit-extension file does not exist', () => {
+  test('rejects explicit runtime extensions with a drop-the-extension hint', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'foo.ts'), '');
+      try {
+        resolveUses({ uses: './foo.ts', fromFile: join(dir, 'zorb.yml') });
+        throw new Error('should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ResolveError);
+        const err = e as ResolveError;
+        expect(err.message).toContain(`'uses:' value './foo.ts' includes a runtime extension`);
+        expect(err.hint).toContain(`drop the '.ts' suffix`);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('rejects explicit runtime extensions even when the file does not exist', () => {
     const { dir, cleanup } = tmp();
     try {
       try {
@@ -380,7 +344,7 @@ describe('resolveUses — errors', () => {
         throw new Error('should have thrown');
       } catch (e) {
         expect(e).toBeInstanceOf(ResolveError);
-        expect((e as ResolveError).message).toContain('action file does not exist');
+        expect((e as ResolveError).message).toContain('includes a runtime extension');
       }
     } finally {
       cleanup();

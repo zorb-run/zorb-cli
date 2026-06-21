@@ -48,19 +48,16 @@ export function resolveUses({ uses, fromFile, onWarn }: ResolveOptions): Resolve
     return resolveNpmAction(uses, fromFile);
   }
 
-  const baseDir = dirname(fromFile);
-  const absolute = resolvePath(baseDir, uses);
-
-  // If the user wrote an explicit recognised extension, use the file as-is.
-  // This is checked before the workflow-ref pattern so that an action file
-  // legitimately named `zorb.js` / `zorb.ts` / etc. resolves as an action,
-  // not as a workflow ref to a task called `js`/`ts`.
-  const exactExt = extensionOf(absolute);
+  // Reject runtime extensions on the `uses:` value. Authors write the file's
+  // logical name (`./scripts/greet.action`) and zorb picks the runtime from
+  // disk — so renaming `greet.action.js` → `greet.action.ts` doesn't ripple
+  // through every workflow that references it.
+  const exactExt = extensionOf(uses);
   if (exactExt && ACTION_EXTENSIONS.includes(exactExt)) {
-    if (existsAsFile(absolute)) {
-      return { kind: 'action', path: absolute, language: languageFor(exactExt) };
-    }
-    throw new ResolveError(`action file does not exist: ${absolute}`);
+    throw new ResolveError(
+      `'uses:' value '${uses}' includes a runtime extension`,
+      `drop the '${exactExt}' suffix — zorb detects the runtime from the file on disk`,
+    );
   }
 
   // Cross-file workflow refs use a 'zorb' basename: ./zorb.build,
@@ -72,10 +69,13 @@ export function resolveUses({ uses, fromFile, onWarn }: ResolveOptions): Resolve
     return resolveWorkflowRef(uses, fromFile, base, firstDot);
   }
 
-  // Otherwise try each known extension in order. Collect every match so we
-  // can warn when more than one runtime would resolve the same `uses:` value —
-  // it's the kind of ambiguity that bites later (e.g. a stale `.js` shadowing
-  // a freshly authored `.ts`).
+  const baseDir = dirname(fromFile);
+  const absolute = resolvePath(baseDir, uses);
+
+  // Try each known extension in order. Collect every match so we can warn when
+  // more than one runtime would resolve the same `uses:` value — it's the kind
+  // of ambiguity that bites later (e.g. a stale `.js` shadowing a freshly
+  // authored `.ts`).
   const tried: string[] = [];
   const matches: { path: string; ext: string }[] = [];
   for (const ext of ACTION_EXTENSIONS) {

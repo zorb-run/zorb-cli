@@ -46,8 +46,9 @@ The most common form: point `uses:` at a file relative to the workflow.
     name: world
 ```
 
-You can include the extension explicitly (`./scripts/greet.action.ts`), but the extensionless form is preferred. zorb
-detects the file by trying each supported extension in order:
+The `uses:` value never includes the runtime extension — `./scripts/greet.action` resolves to the file on disk
+regardless of whether it's TypeScript, JavaScript, or Python. zorb detects the runtime by trying each supported
+extension in order:
 
 ```
 .ts → .mjs → .cjs → .js → .py
@@ -61,8 +62,9 @@ warning: multiple files match './scripts/greet.action' — using …/greet.actio
          (also found: …/greet.action.js)
 ```
 
-Either delete the stale one or commit to the explicit extension. The warning never blocks execution; it just makes sure
-you know which file is running.
+Delete the stale file (or rename one of them) to clear the warning. Writing the runtime extension into `uses:`
+directly — `./scripts/greet.action.ts` — is an error: zorb wants the source of truth for "which runtime?" to live on
+disk, so renaming `.js` → `.ts` doesn't ripple through every workflow that calls it.
 
 ::: tip
 The `.action` segment is a naming convention, not a magic suffix. `./scripts/greet` works exactly as well as
@@ -192,7 +194,7 @@ defaults:
 Per-step override:
 
 ```yml
-- uses: ./scripts/heavy.action.ts
+- uses: ./scripts/heavy.action
   bin: bun --smol {0}
   with: { … }
 ```
