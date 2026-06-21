@@ -16,8 +16,10 @@ permissions:
   pages: write
   id-token: write
 
-# One in-flight deploy per branch. Cancelling a queued build that hasn't
-# finished is fine; cancelling one mid-deploy could leave Pages half-flipped.
+# GitHub Pages has a single deployment slot per environment, so a static
+# 'pages' group serialises every build across branches and workflow_dispatch
+# runs. cancel-in-progress: false because cancelling mid-deploy could leave
+# the Pages environment half-flipped.
 concurrency:
   group: pages
   cancel-in-progress: false
