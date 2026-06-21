@@ -1,0 +1,5 @@
+# VitePress container syntax (::: tip … :::) doesn't survive Prettier's
+# proseWrap. Leave docs markdown alone.
+docs/**/*.md
+docs/.vitepress/cache/
+docs/.vitepress/dist/

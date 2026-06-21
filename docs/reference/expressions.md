@@ -73,6 +73,59 @@ tasks:
       - run: curl $HEALTH_URL
 ```
 
+### `secrets.<name>`
+
+Refers to a value registered into the run-scoped secret table by a previous action (typically a `@zorb/secrets/*`
+loader). Secrets are resolved in `with:` and `env:` the same as other variables, and any registered value is replaced
+with `***` in step stdout/stderr.
+
+```yml
+secrets:
+  - uses: '@zorb/secrets/load-1password'
+    with:
+      vault: Production
+      items: [DATABASE_URL]
+
+tasks:
+  deploy:
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - run: ./bin/migrate
+```
+
+Referencing a secret that hasn't been registered is an error.
+
+### `steps.<id>.outputs.<key>`
+
+Refers to an output produced by an earlier step in the same task. Steps opt in to outputs by giving themselves an `id:`.
+
+```yml
+tasks:
+  release:
+    steps:
+      - id: version
+        uses: ./scripts/version.action
+      - name: Tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: git tag "$TAG"
+```
+
+Code actions produce outputs from the object returned by `action`. Shell steps write `key=value` lines to the file path
+in `$ZORB_OUTPUT`. Multi-line values use heredoc syntax:
+
+```sh
+echo "tag=v1.2.3" >> "$ZORB_OUTPUT"
+{
+  echo 'notes<<EOF'
+  cat CHANGELOG.md
+  echo 'EOF'
+} >> "$ZORB_OUTPUT"
+```
+
+Referencing an unknown step id or output key is an error.
+
 ## Operators
 
 ### Equality: `==`, `!=`
@@ -171,8 +224,8 @@ env:
   TARGET: ${{ inputs.environemnt }} # error: undefined variable: inputs.environemnt
 ```
 
-Referencing an unknown function or an unsupported namespace (`secrets.*`, `steps.*`) also errors with a message pointing
-to the milestone where support lands.
+Calling an unknown function, referencing an undefined secret or step output, or naming a namespace other than `inputs`,
+`env`, `secrets`, or `steps` is also an error.
 
 ## Quoting in YAML
 
