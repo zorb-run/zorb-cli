@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "validate:schema": "bun scripts/validate-schema.ts"
   },
   "files": [
     "bin",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@types/bun": "^1.1.0",
     "@types/minimist": "^1.2.5",
+    "ajv": "^8.20.0",
     "prettier": "^3.3.0",
     "typescript": "^5.5.0",
     "vitepress": "^1.6.4"
