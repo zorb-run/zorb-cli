@@ -28,26 +28,24 @@ jobs:
       - uses: ./.github/actions/smoke-binary
 
   integration:
-    # Runs the shell-script integration suite against the compiled binary on
-    # each platform we ship a binary for. The harness derives dist/<host>/zorb
-    # from `uname` so the same step works on every runner without hardcoding.
-    #
-    # require-docker is '1' on Linux runners (which ship docker) and empty on
-    # macOS runners (which don't). ZORB_REQUIRE_PYTHON is always set — every
-    # GitHub-hosted runner ships python3. See integration-tests/lib.sh.
-    name: integration (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
+    name: integration (${{ matrix.platform }})
+    runs-on: ${{ matrix.runs-on }}
+    needs: ci
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          - platform: linux-x64
+            runs-on: ubuntu-24.04
             require-docker: '1'
-          - runner: ubuntu-24.04-arm
+          - platform: linux-arm
+            runs-on: ubuntu-24.04-arm
             require-docker: '1'
-          - runner: macos-latest
+          - platform: macos-x64
+            runs-on: macos-26-intel
             require-docker: ''
-          - runner: macos-13
+          - platform: macos-arm64
+            runs-on: macos-26
             require-docker: ''
     steps:
       - uses: actions/checkout@v4
