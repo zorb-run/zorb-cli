@@ -3,3 +3,5 @@ dist/
 *.log
 .DS_Store
 .*.bun-build
+docs/.vitepress/cache/
+docs/.vitepress/dist/
