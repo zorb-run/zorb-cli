@@ -14,7 +14,7 @@
 # build belongs to its own step in CI and (b) silently rebuilding hides the
 # wrong-binary class of bug. Build it explicitly first:
 #
-#   bun scripts/build.ts --current
+#   bun run build -- --current
 #
 # Environment:
 #   ZORB_BIN    Override the binary path. Default: dist/<host>/zorb under the
@@ -56,7 +56,7 @@ fi
 
 if [[ ! -x "$ZORB_BIN" ]]; then
     printf 'zorb binary not found at %s\n' "$ZORB_BIN" >&2
-    printf 'build it first:  bun scripts/build.ts --current\n' >&2
+    printf 'build it first:  bun run build -- --current\n' >&2
     exit 2
 fi
 export ZORB_BIN

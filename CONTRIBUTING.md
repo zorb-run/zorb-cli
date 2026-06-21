@@ -41,7 +41,7 @@ bun run dev -- run build
 To run the compiled binary the way users will, build it first:
 
 ```sh
-bun scripts/build.ts --current
+bun run build -- --current
 ./dist/$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')/zorb --version
 ```
 
@@ -55,8 +55,8 @@ bun scripts/build.ts --current
 | `bun run format`                    | Format with Prettier                                                                |
 | `bun run dev`                       | Run the CLI from source                                                             |
 | `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`               |
-| `bun scripts/build.ts --current`    | Build only the host-platform binary (used by smoke tests)                           |
-| `bun scripts/build.ts --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
+| `bun run build -- --current`        | Build only the host-platform binary (used by smoke tests)                           |
+| `bun run build -- --target=<p>`     | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
 
 ## Binary distribution
 
@@ -72,7 +72,7 @@ The dispatcher inspects `process.platform` + `process.arch` and execs `../dist/<
 compiled binary resolves `dirname(execPath)/../runners/` for code actions, so the four binaries share the single
 `dist/runners/` directory.
 
-`bun scripts/build.ts` produces the layout above.
+`bun run build` produces the layout above.
 
 Set `ZORB_SKIP_SMOKE=1` to skip the binary smoke tests during local iteration (they add a one-off ~150ms compile to
 `bun run test:unit`).
@@ -167,7 +167,7 @@ cover shell execution, nested workflows, code actions, and Docker steps — the 
 discovery, and subprocess plumbing can regress in ways `bun test` won't catch.
 
 ```sh
-bun scripts/build.ts --current                      # build the host binary first
+bun run build -- --current                          # build the host binary first
 ./integration-tests/run.sh                          # run all
 ./integration-tests/run.sh shell/basic.test.sh     # run one test (path relative to integration-tests/)
 ZORB_BIN=/path/to/zorb ./integration-tests/run.sh  # point at a binary built elsewhere
