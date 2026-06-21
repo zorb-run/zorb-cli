@@ -46,7 +46,7 @@ runs:
           smoke:
             steps:
               - run: echo hello
-              - uses: ./action.cjs
+              - uses: ./action
         YML
 
         "$zorb" run smoke -f "$smoke/zorb.yml"
