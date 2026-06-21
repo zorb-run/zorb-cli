@@ -176,8 +176,9 @@ ZORB_BIN=/path/to/zorb ./integration-tests/run.sh  # point at a binary built els
 The harness exits with a `build it first` hint if `dist/<host>/zorb` is missing — we don't auto-build, so the binary
 under test is always one you explicitly produced.
 
-Tests that need optional tooling (`docker`, `python3`) skip cleanly when it's missing. CI sets `CI=true`, which flips
-those skips into hard failures so coverage on Linux runners stays honest.
+Tests that need optional tooling (`docker`, `python3`) skip cleanly when it's missing. Set `ZORB_REQUIRE_DOCKER=1` or
+`ZORB_REQUIRE_PYTHON=1` to flip a missing tool into a hard failure — CI uses these per-runner so coverage stays honest
+on platforms where the tool _should_ be present (Linux ships docker; macOS GitHub-hosted runners don't).
 
 Adding a test: drop a `<name>.test.sh` (and any fixtures) into one of the four suite directories, source
 `integration-tests/lib.sh`, and use `zorb …` (already pointed at the binary under test) plus the `assert_*` helpers.

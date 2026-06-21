@@ -81,27 +81,26 @@ capture() {
     rm -f "$_stdout_file" "$_stderr_file"
 }
 
-# Resolve a docker daemon — skip cleanly when unavailable, but fail hard in CI
-# so we don't silently drop coverage on the platform that actually ships it.
+# Optional-tooling guards. Default behaviour is to skip cleanly when the tool
+# is missing — that's what local contributors without docker/python want.
+#
+# Set ZORB_REQUIRE_DOCKER=1 or ZORB_REQUIRE_PYTHON=1 to flip a missing tool
+# into a hard failure. CI sets these per-runner so coverage stays honest on
+# platforms where the tool *should* be installed (Linux ships docker;
+# macOS GitHub-hosted runners don't).
 require_docker() {
-    if ! command -v docker >/dev/null 2>&1; then
-        if [[ "${CI:-}" == "true" ]]; then
-            fail "docker CLI not found (CI=true requires it)"
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        if [[ "${ZORB_REQUIRE_DOCKER:-}" == "1" ]]; then
+            fail "docker required but unavailable (ZORB_REQUIRE_DOCKER=1)"
         fi
-        skip "docker CLI not installed"
-    fi
-    if ! docker info >/dev/null 2>&1; then
-        if [[ "${CI:-}" == "true" ]]; then
-            fail "docker daemon not reachable (CI=true requires it)"
-        fi
-        skip "docker daemon not reachable"
+        skip "docker not available"
     fi
 }
 
 require_python3() {
     if ! command -v python3 >/dev/null 2>&1; then
-        if [[ "${CI:-}" == "true" ]]; then
-            fail "python3 not found (CI=true requires it)"
+        if [[ "${ZORB_REQUIRE_PYTHON:-}" == "1" ]]; then
+            fail "python3 required but unavailable (ZORB_REQUIRE_PYTHON=1)"
         fi
         skip "python3 not installed"
     fi
