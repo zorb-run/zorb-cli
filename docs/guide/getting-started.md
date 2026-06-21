@@ -186,6 +186,9 @@ For code-based steps, `uses:` runs an action file in JavaScript, TypeScript, or 
 
 ## Next steps
 
+- **[Creating workflows](./creating-workflows.md)** — the full picture of building a `zorb.yml`.
+- **[Creating shell steps](./creating-shell-steps.md)** — everything `run:` can do.
+- **[Creating code steps](./creating-code-steps.md)** — call actions and other tasks with `uses:`.
+- **[Writing actions](./actions.md)** — author code that workflows can call.
 - **[Workflow format reference](../reference/workflow.md)** — every key zorb understands.
 - **[Expressions](../reference/expressions.md)** — variables, operators, functions, filter syntax.
-- **[Writing actions](./actions.md)** — author code that workflows can call.

@@ -65,7 +65,7 @@ check(
       deploy: {
         defaults: { action: { js: { bin: 'node {0}' } } },
         steps: [
-          { uses: './scripts/version.action.ts', with: { path: 'package.json' }, bin: 'tsx {0}' },
+          { uses: './scripts/version.action', with: { path: 'package.json' }, bin: 'tsx {0}' },
           { run: 'echo done' },
         ],
       },
