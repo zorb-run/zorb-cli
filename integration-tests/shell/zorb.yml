@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+env:
+  WORKFLOW_VAR: workflow
+
+tasks:
+  greet:
+    description: Multi-step task exercising env scoping
+    env:
+      TASK_VAR: task
+    steps:
+      - name: Step 1
+        run: echo "step1 workflow=$WORKFLOW_VAR task=$TASK_VAR"
+      - name: Step 2
+        env:
+          STEP_VAR: step
+          TASK_VAR: overridden
+        run: echo "step2 step=$STEP_VAR task=$TASK_VAR"
+
+  fail-middle:
+    description: Failing step bails out before later steps run
+    steps:
+      - run: echo "first ran"
+      - run: exit 7
+      - run: echo "should not run"
