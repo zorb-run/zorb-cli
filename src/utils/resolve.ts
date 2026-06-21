@@ -29,14 +29,16 @@ export interface ResolvedWorkflow {
 
 export type Resolved = ResolvedAction | ResolvedWorkflow;
 
-export const ACTION_EXTENSIONS: readonly string[] = ['.js', '.cjs', '.mjs', '.ts', '.py'];
+export const ACTION_EXTENSIONS: readonly string[] = ['.ts', '.mjs', '.cjs', '.js', '.py'];
 
 export interface ResolveOptions {
   uses: string;
   fromFile: string;
+  /** Called for non-fatal diagnostics (e.g. multiple extension matches). */
+  onWarn?: (message: string) => void;
 }
 
-export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
+export function resolveUses({ uses, fromFile, onWarn }: ResolveOptions): Resolved {
   if (uses === '') {
     throw new ResolveError(`'uses:' value is empty`);
   }
@@ -70,17 +72,28 @@ export function resolveUses({ uses, fromFile }: ResolveOptions): Resolved {
     return resolveWorkflowRef(uses, fromFile, base, firstDot);
   }
 
-  // Otherwise try each known extension in order.
+  // Otherwise try each known extension in order. Collect every match so we
+  // can warn when more than one runtime would resolve the same `uses:` value —
+  // it's the kind of ambiguity that bites later (e.g. a stale `.js` shadowing
+  // a freshly authored `.ts`).
   const tried: string[] = [];
+  const matches: { path: string; ext: string }[] = [];
   for (const ext of ACTION_EXTENSIONS) {
     const candidate = absolute + ext;
     tried.push(candidate);
-    if (existsAsFile(candidate)) {
-      return { kind: 'action', path: candidate, language: languageFor(ext) };
-    }
+    if (existsAsFile(candidate)) matches.push({ path: candidate, ext });
   }
 
-  throw new ResolveError(`could not resolve action '${uses}'`, `tried: ${tried.join(', ')}`);
+  if (matches.length === 0) {
+    throw new ResolveError(`could not resolve action '${uses}'`, `tried: ${tried.join(', ')}`);
+  }
+
+  const chosen = matches[0]!;
+  if (matches.length > 1 && onWarn) {
+    const others = matches.slice(1).map((m) => m.path).join(', ');
+    onWarn(`multiple files match '${uses}' — using ${chosen.path} (also found: ${others})`);
+  }
+  return { kind: 'action', path: chosen.path, language: languageFor(chosen.ext) };
 }
 
 // Parse `./[dir/]zorb.<taskname>` into a workflow ref. The runner loads the

@@ -41,12 +41,12 @@ describe('resolveUses — local paths', () => {
     }
   });
 
-  test('extensionless paths try .js, .cjs, .mjs, .ts, .py in order', () => {
+  test('extensionless paths try .ts, .mjs, .cjs, .js, .py in order', () => {
     const { dir, cleanup } = tmp();
     try {
-      writeFileSync(join(dir, 'thing.ts'), 'export const action = () => ({});');
+      writeFileSync(join(dir, 'thing.cjs'), 'module.exports.action = () => ({});');
       const r = asAction(resolveUses({ uses: './thing', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'thing.ts'));
+      expect(r.path).toBe(join(dir, 'thing.cjs'));
       expect(r.language).toBe('js');
     } finally {
       cleanup();
@@ -71,7 +71,59 @@ describe('resolveUses — local paths', () => {
       writeFileSync(join(dir, 'thing.js'), '');
       writeFileSync(join(dir, 'thing.ts'), '');
       const r = asAction(resolveUses({ uses: './thing', fromFile: join(dir, 'zorb.yml') }));
-      expect(r.path).toBe(join(dir, 'thing.js'));
+      expect(r.path).toBe(join(dir, 'thing.ts'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('warns when multiple extensions match the same extensionless path', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'thing.ts'), '');
+      writeFileSync(join(dir, 'thing.js'), '');
+      writeFileSync(join(dir, 'thing.py'), '');
+      const warnings: string[] = [];
+      const r = asAction(
+        resolveUses({ uses: './thing', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
+      );
+      expect(r.path).toBe(join(dir, 'thing.ts'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(`multiple files match './thing'`);
+      expect(warnings[0]).toContain(join(dir, 'thing.ts'));
+      expect(warnings[0]).toContain(join(dir, 'thing.js'));
+      expect(warnings[0]).toContain(join(dir, 'thing.py'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('does not warn when only one extension matches', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'only.ts'), '');
+      const warnings: string[] = [];
+      const r = asAction(
+        resolveUses({ uses: './only', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
+      );
+      expect(r.path).toBe(join(dir, 'only.ts'));
+      expect(warnings).toHaveLength(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('does not warn for explicit-extension paths even if siblings exist', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'pick.js'), '');
+      writeFileSync(join(dir, 'pick.ts'), '');
+      const warnings: string[] = [];
+      const r = asAction(
+        resolveUses({ uses: './pick.js', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
+      );
+      expect(r.path).toBe(join(dir, 'pick.js'));
+      expect(warnings).toHaveLength(0);
     } finally {
       cleanup();
     }

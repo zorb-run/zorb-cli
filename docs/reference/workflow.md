@@ -220,8 +220,10 @@ action authors is documented in [Writing actions](../guide/actions.md).
 1. **Workflow task reference** — if the basename starts with `zorb.` (e.g. `./zorb.build`, `./other/zorb.deploy`), it
    resolves to a task in the indicated `zorb.yml`. Cross-file references work the same as in-file ones, except the
    referenced task only sees the inputs supplied via `with:`. Cycles are detected and error.
-2. **Local file** — `./path/to/file.action` resolves to the file with one of the supported extensions: `.js`, `.cjs`,
-   `.mjs`, `.ts`, `.py`. The file is loaded by the matching runner.
+2. **Local file** — `./path/to/file.action` resolves to the file with one of the supported extensions, tried in order:
+   `.ts`, `.mjs`, `.cjs`, `.js`, `.py`. If more than one extension matches the same extensionless path, the first one
+   wins and zorb prints a warning listing the alternatives so the ambiguity is visible. The file is loaded by the
+   matching runner.
 3. **NPM package** — `@scope/package/path` (e.g. `@zorb/aws/s3/sync`) resolves via `node_modules` relative to the
    workflow's directory. Missing `@zorb/*` packages error with an install hint.
 

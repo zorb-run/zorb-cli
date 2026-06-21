@@ -30,6 +30,9 @@ export default defineConfig({
           text: 'Guide',
           items: [
             { text: 'Getting started', link: '/guide/getting-started' },
+            { text: 'Creating workflows', link: '/guide/creating-workflows' },
+            { text: 'Creating shell steps', link: '/guide/creating-shell-steps' },
+            { text: 'Creating code steps', link: '/guide/creating-code-steps' },
             { text: 'Writing actions', link: '/guide/actions' },
           ],
         },

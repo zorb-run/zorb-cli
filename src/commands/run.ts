@@ -482,7 +482,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
 
   let resolved;
   try {
-    resolved = resolveUses({ uses: step.uses, fromFile: workflowPath });
+    resolved = resolveUses({ uses: step.uses, fromFile: workflowPath, onWarn: (m) => log.warn(m) });
   } catch (e) {
     if (e instanceof ResolveError) {
       log.error(e.message);

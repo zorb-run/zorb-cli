@@ -99,7 +99,7 @@ export async function runUse({
   const anchorDir = baseCwd;
   let resolved;
   try {
-    resolved = resolveUses({ uses: action, fromFile: join(anchorDir, 'zorb.yml') });
+    resolved = resolveUses({ uses: action, fromFile: join(anchorDir, 'zorb.yml'), onWarn: (m) => log.warn(m) });
   } catch (e) {
     if (e instanceof ResolveError) {
       log.error(e.message);
