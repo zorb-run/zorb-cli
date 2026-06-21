@@ -5,7 +5,7 @@ export default defineConfig({
   description: 'Declarative local workflow runner.',
   lastUpdated: true,
   cleanUrls: true,
-  head: [['link', { rel: 'icon', href: '/favicon.ico' }]],
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]],
   // zorb's expression syntax (`${{ ... }}`) clashes with Vue's `{{ }}` interpolation
   // inside inline code spans. Wrap any such span in v-pre so Vue leaves it alone.
   markdown: {
