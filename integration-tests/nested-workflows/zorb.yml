@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+tasks:
+  build:
+    description: Inner task referenced by release
+    steps:
+      - run: echo "build ran"
+
+  release:
+    description: Calls another task in the same file
+    steps:
+      - uses: ./zorb.build
+      - run: echo "release done"
+
+  deploy:
+    description: Calls a task in a sibling workflow file
+    steps:
+      - uses: ./infra/zorb.apply
+        with:
+          environment: production
+      - run: echo "deploy done"

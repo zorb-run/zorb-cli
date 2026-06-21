@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+tasks:
+  apply:
+    description: Cross-file target task
+    inputs:
+      environment:
+        description: Target environment
+        type: string
+        required: true
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - run: echo "applying to $ENVIRONMENT"

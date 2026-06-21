@@ -13,7 +13,7 @@ core.
 ## Dev loop
 
 - Run the CLI directly: `bun src/cli.ts <args>` — there's no built binary yet.
-- Tests: `bun test` (unit + subprocess).
+- Tests: `bun run test:unit` (unit + subprocess + binary smoke) and `bun run test:integration` (shell scripts driving the compiled binary).
 - Typecheck: `bun run typecheck`.
 - Format: `bun run format`.
 

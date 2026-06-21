@@ -47,14 +47,15 @@ bun scripts/build.ts --current
 
 ## Common commands
 
-| Command                             | What it does                                                                   |
-| ----------------------------------- | ------------------------------------------------------------------------------ |
-| `bun test`                          | Run the test suite (unit + spawned CLI + binary smoke)                         |
-| `bun run typecheck`                 | Type-check with `tsc --noEmit`                                                 |
-| `bun run format`                    | Format with Prettier                                                           |
-| `bun run dev`                       | Run the CLI from source                                                        |
-| `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`          |
-| `bun scripts/build.ts --current`    | Build only the host-platform binary (used by smoke tests)                      |
+| Command                             | What it does                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `bun run test:unit`                 | Unit + spawned-CLI + binary-smoke tests via `bun test`                              |
+| `bun run test:integration`          | Build the host binary and exercise the `integration-tests/` shell suite             |
+| `bun run typecheck`                 | Type-check with `tsc --noEmit`                                                      |
+| `bun run format`                    | Format with Prettier                                                                |
+| `bun run dev`                       | Run the CLI from source                                                             |
+| `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`               |
+| `bun scripts/build.ts --current`    | Build only the host-platform binary (used by smoke tests)                           |
 | `bun scripts/build.ts --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
 
 ## Binary distribution
@@ -74,7 +75,7 @@ compiled binary resolves `dirname(execPath)/../runners/` for code actions, so th
 `bun scripts/build.ts` produces the layout above.
 
 Set `ZORB_SKIP_SMOKE=1` to skip the binary smoke tests during local iteration (they add a one-off ~150ms compile to
-`bun test`).
+`bun run test:unit`).
 
 ## Cutting a release
 
@@ -93,8 +94,8 @@ workflow listens for `release: published` and uploads the platform binaries to t
 3. Draft a release against that tag on GitHub (or `gh release create vX.Y.Z --draft`), write the notes, then publish.
 4. The workflow builds all four binaries on `ubuntu-latest`, packages each as `zorb-<platform>.tar.gz` (containing
    `zorb-<platform>/bin/zorb` + `zorb-<platform>/runners/`), generates a `SHA256SUMS` file, and attaches the lot to the
-   release. The same step extracts the linux-x64 tarball and runs a tiny code-action workflow to verify runner
-   discovery before publishing.
+   release. The same step extracts the linux-x64 tarball and runs a tiny code-action workflow to verify runner discovery
+   before publishing.
 
 Re-publishing the same release re-runs the workflow; `gh release upload --clobber` overwrites any existing assets.
 
@@ -149,7 +150,7 @@ Routing:
 
 ## Testing
 
-Use `bun test`. We have two flavours:
+Run `bun run test:unit` (or `bun test` directly). We have two flavours:
 
 1. **Unit tests** for small modules (`colors`, `logger`) — import directly and inject fake streams.
 2. **Subprocess tests** for the CLI (`test/cli.test.ts`) — spawn `bun src/cli.ts <args>` and assert on
@@ -158,6 +159,28 @@ Use `bun test`. We have two flavours:
 
 Aim to add a test alongside any new behaviour. If you're adding a command, cover at least: missing-arg error, happy
 path, `--help`.
+
+### Integration tests
+
+End-to-end shell scripts under `integration-tests/` exercise the compiled binary against real `zorb.yml` workflows. They
+cover shell execution, nested workflows, code actions, and Docker steps — the surface area where bundling, runner
+discovery, and subprocess plumbing can regress in ways `bun test` won't catch.
+
+```sh
+bun scripts/build.ts --current                      # build the host binary first
+./integration-tests/run.sh                          # run all
+./integration-tests/run.sh shell/basic.test.sh     # run one test (path relative to integration-tests/)
+ZORB_BIN=/path/to/zorb ./integration-tests/run.sh  # point at a binary built elsewhere
+```
+
+The harness exits with a `build it first` hint if `dist/<host>/zorb` is missing — we don't auto-build, so the binary
+under test is always one you explicitly produced.
+
+Tests that need optional tooling (`docker`, `python3`) skip cleanly when it's missing. CI sets `CI=true`, which flips
+those skips into hard failures so coverage on Linux runners stays honest.
+
+Adding a test: drop a `<name>.test.sh` (and any fixtures) into one of the four suite directories, source
+`integration-tests/lib.sh`, and use `zorb …` (already pointed at the binary under test) plus the `assert_*` helpers.
 
 ## Commit style
 
@@ -169,6 +192,6 @@ path, `--help`.
 ## Pull requests
 
 - Branch from `main`. Name branches `feat/<short>`, `fix/<short>`, or `chore/<short>`.
-- Before pushing: `bun run typecheck && bun test && bun run format`.
+- Before pushing: `bun run typecheck && bun run test:unit && bun run test:integration && bun run format`.
 - Keep PRs small. If a milestone spans multiple files, split where it makes sense — each commit should leave the tree
   green.

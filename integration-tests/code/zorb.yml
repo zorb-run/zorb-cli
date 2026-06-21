@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+tasks:
+  greet-cjs:
+    description: CJS action with outputs flowing into a later shell step
+    steps:
+      - id: greeter
+        uses: ./greet.action
+        with:
+          name: integration
+      - env:
+          MSG: ${{ steps.greeter.outputs.message }}
+        run: echo "shell saw $MSG"
+
+  greet-py:
+    description: Python action via runners/runner.py
+    steps:
+      - uses: ./greet_py.action
+        with:
+          name: integration

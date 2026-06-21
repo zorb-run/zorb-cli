@@ -5,3 +5,4 @@ dist/
 .*.bun-build
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+__pycache__/

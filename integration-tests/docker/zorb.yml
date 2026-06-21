@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zorb-run/zorb-cli/main/zorb.schema.json
+
+tasks:
+  short-form:
+    description: Short-form docker step
+    steps:
+      - docker: alpine:3.20
+        env:
+          GREETING: hello
+        run: echo "container says $GREETING"
+
+  long-form:
+    description: docker block with image, workdir, and pull policy
+    steps:
+      - docker:
+          image: alpine:3.20
+          workdir: /tmp
+          pull: if-not-present
+        env:
+          NAME: integration
+        run: |
+          pwd
+          echo "long-form $NAME"
