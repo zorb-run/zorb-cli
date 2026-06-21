@@ -30,7 +30,7 @@ describe('resolveUses — local paths', () => {
     }
   });
 
-  test('extensionless paths try .ts, .mjs, .cjs, .js, .py in order', () => {
+  test('appends a runtime extension to an extensionless path', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'thing.cjs'), 'module.exports.action = () => ({});');
@@ -74,7 +74,7 @@ describe('resolveUses — local paths', () => {
       writeFileSync(join(dir, 'thing.py'), '');
       const warnings: string[] = [];
       const r = asAction(
-        resolveUses({ uses: './thing', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
+        resolveUses({ uses: './thing', fromFile: join(dir, 'zorb.yml'), onWarning: (m) => warnings.push(m) }),
       );
       expect(r.path).toBe(join(dir, 'thing.ts'));
       expect(warnings).toHaveLength(1);
@@ -93,7 +93,7 @@ describe('resolveUses — local paths', () => {
       writeFileSync(join(dir, 'only.ts'), '');
       const warnings: string[] = [];
       const r = asAction(
-        resolveUses({ uses: './only', fromFile: join(dir, 'zorb.yml'), onWarn: (m) => warnings.push(m) }),
+        resolveUses({ uses: './only', fromFile: join(dir, 'zorb.yml'), onWarning: (m) => warnings.push(m) }),
       );
       expect(r.path).toBe(join(dir, 'only.ts'));
       expect(warnings).toHaveLength(0);

@@ -58,8 +58,7 @@ The first match wins. If more than one extension matches the same path — say y
 `greet.action.js` sitting next to each other — zorb prints a warning so the ambiguity is visible:
 
 ```
-warning: multiple files match './scripts/greet.action' — using …/greet.action.ts
-         (also found: …/greet.action.js)
+warning: multiple files match './scripts/greet.action' — using …/greet.action.ts (also found: …/greet.action.js)
 ```
 
 Delete the stale file (or rename one of them) to clear the warning. Writing the runtime extension into `uses:`

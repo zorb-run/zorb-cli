@@ -35,10 +35,10 @@ export interface ResolveOptions {
   uses: string;
   fromFile: string;
   /** Called for non-fatal diagnostics (e.g. multiple extension matches). */
-  onWarn?: (message: string) => void;
+  onWarning?: (message: string) => void;
 }
 
-export function resolveUses({ uses, fromFile, onWarn }: ResolveOptions): Resolved {
+export function resolveUses({ uses, fromFile, onWarning }: ResolveOptions): Resolved {
   if (uses === '') {
     throw new ResolveError(`'uses:' value is empty`);
   }
@@ -89,9 +89,9 @@ export function resolveUses({ uses, fromFile, onWarn }: ResolveOptions): Resolve
   }
 
   const chosen = matches[0]!;
-  if (matches.length > 1 && onWarn) {
+  if (matches.length > 1 && onWarning) {
     const others = matches.slice(1).map((m) => m.path).join(', ');
-    onWarn(`multiple files match '${uses}' — using ${chosen.path} (also found: ${others})`);
+    onWarning(`multiple files match '${uses}' — using ${chosen.path} (also found: ${others})`);
   }
   return { kind: 'action', path: chosen.path, language: languageFor(chosen.ext) };
 }
