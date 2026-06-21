@@ -50,7 +50,7 @@ bun scripts/build.ts --current
 | Command                             | What it does                                                                        |
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
 | `bun run test:unit`                 | Unit + spawned-CLI + binary-smoke tests via `bun test`                              |
-| `bun run test:integration`          | Build the host binary and exercise the `integration-tests/` shell suite             |
+| `bun run test:integration`          | Run the `integration-tests/` shell suite against `dist/<host>/zorb` (build first)   |
 | `bun run typecheck`                 | Type-check with `tsc --noEmit`                                                      |
 | `bun run format`                    | Format with Prettier                                                                |
 | `bun run dev`                       | Run the CLI from source                                                             |

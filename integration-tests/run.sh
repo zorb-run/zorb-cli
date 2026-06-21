@@ -74,9 +74,12 @@ if [[ $# -gt 0 ]]; then
         tests+=("$path")
     done
 else
-    while IFS= read -r -d '' f; do
+    # Newline-separated rather than NUL — `sort -z` is GNU-only, and our test
+    # paths are repo-controlled (no newlines, no spaces), so plain `sort` is
+    # safe and works on BSD `sort` too.
+    while IFS= read -r f; do
         tests+=("$f")
-    done < <(find "$HARNESS_DIR" -type f -name '*.test.sh' -print0 | sort -z)
+    done < <(find "$HARNESS_DIR" -type f -name '*.test.sh' | LC_ALL=C sort)
 fi
 
 if [[ ${#tests[@]} -eq 0 ]]; then
