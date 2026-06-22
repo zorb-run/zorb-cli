@@ -184,12 +184,22 @@ similar.
 
 ## Local actions vs. NPM actions
 
-Resolution is the same for both:
+Write the action's logical name without a runtime extension; zorb detects the runtime from the file on disk.
 
-- `uses: ./relative/path.action` — file on disk, resolved against the workflow's directory. The runtime extension is
-  detected on disk; don't write it into `uses:`.
-- `uses: @scope/package/path` — resolved via `node_modules` relative to the workflow. The package is expected to expose
-  a file at the requested subpath; e.g. `@zorb/aws/s3/sync` looks for `node_modules/@zorb/aws/s3/sync.{js,mjs,…}`.
+- `uses: ./relative/path.action` — file on disk, resolved against the workflow's directory. zorb tries each supported
+  extension in order — `.ts`, `.mjs`, `.cjs`, `.js`, `.py` — and the first match wins. If more than one extension
+  matches (e.g. a stale `greet.action.js` next to a freshly authored `greet.action.ts`), zorb still picks the first
+  but prints a warning naming the alternatives so the ambiguity is visible. Delete or rename one of the files to clear
+  it.
+- `uses: @scope/package/path` — resolved via Node-style `require.resolve` from the workflow's directory. The package's
+  own `exports` / `main` / `files` decide which file the subpath maps to; zorb does **not** probe runtime extensions
+  for NPM actions. The package is responsible for exposing the subpath you reference — e.g. `@zorb/aws/s3/sync` must
+  resolve to a real file inside `node_modules/@zorb/aws/`. Once resolved, zorb picks the runtime from the file's
+  extension on disk.
+
+Writing the runtime extension into `uses:` directly — `./scripts/greet.action.ts` — is an error, with a hint pointing
+at the suffix to drop. The source of truth for "which runtime?" lives on disk, so renaming `.js` → `.ts` doesn't ripple
+through every workflow that calls the action.
 
 For NPM actions, install the package the usual way (`npm install @zorb/aws`). Missing `@zorb/*` packages produce an
 install hint.
@@ -232,7 +242,7 @@ test('reads package.json version', () => {
 **2. Run it through zorb** with `zorb use`:
 
 ```sh
-zorb use ./scripts/version.action.ts --with path=./package.json
+zorb use ./scripts/version.action --with path=./package.json
 ```
 
 `zorb use` invokes the action directly, no `zorb.yml` required. Step outputs are printed on completion so you can verify

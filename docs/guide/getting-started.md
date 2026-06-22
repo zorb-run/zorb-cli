@@ -195,9 +195,16 @@ For code-based steps, `uses:` runs an action file in JavaScript, TypeScript, or 
 
 ## Next steps
 
+- **[Why zorb?](./why-zorb.md)** — how zorb compares to Make, npm scripts, Just, taskfile.dev, and GitHub Actions.
+- **[How zorb works](./concepts.md)** — the mental model in five minutes: workflows, tasks, steps, actions.
 - **[Creating workflows](./creating-workflows.md)** — the full picture of building a `zorb.yml`.
 - **[Creating shell steps](./creating-shell-steps.md)** — everything `run:` can do.
 - **[Creating code steps](./creating-code-steps.md)** — call actions and other tasks with `uses:`.
 - **[Writing actions](./actions.md)** — author code that workflows can call.
+- **[Running zorb in CI](./running-in-ci.md)** — GitHub Actions, GitLab CI, CircleCI integration patterns.
+- **[Cookbook](../cookbook/)** — worked recipes for common workflow shapes.
 - **[Workflow format reference](../reference/workflow.md)** — every key zorb understands.
+- **[CLI reference](../reference/cli.md)** — every command and flag.
 - **[Expressions](../reference/expressions.md)** — variables, operators, functions, filter syntax.
+- **[Security model](../reference/security.md)** — what zorb's defaults protect against, and what they don't.
+- **[Troubleshooting](./troubleshooting.md)** — common gotchas with their fixes.
