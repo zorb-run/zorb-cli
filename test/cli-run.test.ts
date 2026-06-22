@@ -115,17 +115,7 @@ describe('zorb run', () => {
     try {
       writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
       const { exitCode, stdout } = await runCli(
-        [
-          'run',
-          'deploy',
-          '--with',
-          'environment=staging',
-          '--with',
-          'dry-run=yes',
-          '--with',
-          'replicas=3',
-          '--verbose',
-        ],
+        ['run', 'deploy', '--with', 'environment=staging', 'dry-run=yes', 'replicas=3', '--verbose'],
         { cwd: dir },
       );
       expect(exitCode).toBe(0);
@@ -144,10 +134,9 @@ describe('zorb run', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'deploy', '--with', 'environment=staging', '--with', 'replicas=three'],
-        { cwd: dir },
-      );
+      const { exitCode, stderr } = await runCli(['run', 'deploy', '--with', 'environment=staging', 'replicas=three'], {
+        cwd: dir,
+      });
       expect(exitCode).toBe(1);
       expect(stderr).toContain(`input 'replicas' for task 'deploy'`);
       expect(stderr).toContain('expected a number');
@@ -160,15 +149,67 @@ describe('zorb run', () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
-      const { exitCode, stderr } = await runCli(
-        ['run', 'deploy', '--with', 'environment=prod', '--with', 'surprise=value'],
-        { cwd: dir },
-      );
+      const { exitCode, stderr } = await runCli(['run', 'deploy', '--with', 'environment=prod', 'surprise=value'], {
+        cwd: dir,
+      });
       expect(exitCode).toBe(0);
       expect(stderr).toContain(`warning:`);
       expect(stderr).toContain(`unknown input 'surprise'`);
     } finally {
       cleanup();
+    }
+  });
+
+  test('rejects repeated --with flags', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
+      const { exitCode, stderr } = await runCli(
+        ['run', 'deploy', '--with', 'environment=staging', '--with', 'dry-run=true'],
+        { cwd: dir },
+      );
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('--with is not repeatable');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('errors when --with is followed by no pair', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
+      const { exitCode, stderr } = await runCli(['run', 'deploy', '--with', '--verbose'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('--with requires at least one key=value pair');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('rejects --with=<pair> equals form', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
+      const { exitCode, stderr } = await runCli(['run', 'deploy', '--with=environment=staging'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`--with does not accept '='`);
+      expect(stderr).toContain(`--with <value>`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('rejects equals form on other flags too (--file=, --env-file=, -e=)', async () => {
+    for (const args of [
+      ['run', 'deploy', '--file=zorb.yml'],
+      ['run', 'deploy', '--env-file=.env'],
+      ['run', 'deploy', '-e=FOO=bar'],
+      ['run', 'deploy', '--watch=*.ts'],
+    ]) {
+      const { exitCode, stderr } = await runCli(args);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`does not accept '='`);
     }
   });
 
@@ -311,19 +352,38 @@ tasks:
     }
   });
 
-  test('process env passes through to the step', async () => {
+  test('process env does NOT pass through to the step (strict isolation)', async () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(
         join(dir, 'zorb.yml'),
-        `tasks:\n  showenv:\n    steps:\n      - run: 'echo "from-parent: $ZORB_PARENT_TEST"'\n`,
+        `tasks:\n  showenv:\n    steps:\n      - run: 'echo "from-parent=[$ZORB_PARENT_TEST]"'\n`,
       );
       const { exitCode, stdout } = await runCli(['run', 'showenv'], {
         cwd: dir,
-        env: { ZORB_PARENT_TEST: 'inherited' },
+        env: { ZORB_PARENT_TEST: 'should-not-leak' },
       });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('from-parent: inherited');
+      expect(stdout).toContain('from-parent=[]');
+      expect(stdout).not.toContain('should-not-leak');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('process env can be opted in explicitly with -e KEY', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(
+        join(dir, 'zorb.yml'),
+        `tasks:\n  showenv:\n    steps:\n      - run: 'echo "passed=$ZORB_PARENT_TEST"'\n`,
+      );
+      const { exitCode, stdout } = await runCli(['run', 'showenv', '-e', 'ZORB_PARENT_TEST'], {
+        cwd: dir,
+        env: { ZORB_PARENT_TEST: 'opted-in' },
+      });
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('passed=opted-in');
     } finally {
       cleanup();
     }
@@ -781,6 +841,50 @@ ${body}
       expect(after('--pull')).toBe('missing');
       expect(argv).toContain('/host:/container');
       expect(argv).toContain('node:20');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('-e KEY (no value) passes the value of process.env[KEY] through', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv, argvLog } = setupFakeDocker(dir, 'exit 0');
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  d:\n    steps:\n      - docker: alpine\n        run: echo hi\n`);
+      const { exitCode } = await runCli(['run', 'd', '-e', 'CI'], {
+        cwd: dir,
+        env: { PATH: pathEnv, CI: 'true' },
+      });
+      expect(exitCode).toBe(0);
+      const argv = readFileSync(argvLog, 'utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
+      const envPairs = argv
+        .map((a, i) => (argv[i - 1] === '-e' ? a : undefined))
+        .filter((x): x is string => x !== undefined);
+      expect(envPairs).toContain('CI=true');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('-e KEY silently skips when KEY is not set in process.env', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const { pathEnv, argvLog } = setupFakeDocker(dir, 'exit 0');
+      writeFileSync(join(dir, 'zorb.yml'), `tasks:\n  d:\n    steps:\n      - docker: alpine\n        run: echo hi\n`);
+      const { exitCode } = await runCli(['run', 'd', '-e', 'ZORB_NOT_SET'], {
+        cwd: dir,
+        env: { PATH: pathEnv, ZORB_NOT_SET: undefined },
+      });
+      expect(exitCode).toBe(0);
+      const argv = readFileSync(argvLog, 'utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
+      const envPairs = argv
+        .map((a, i) => (argv[i - 1] === '-e' ? a : undefined))
+        .filter((x): x is string => x !== undefined);
+      expect(envPairs.some((p) => p.startsWith('ZORB_NOT_SET'))).toBe(false);
     } finally {
       cleanup();
     }

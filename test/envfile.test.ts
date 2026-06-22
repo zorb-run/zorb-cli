@@ -87,17 +87,20 @@ describe('parseInlineEnv', () => {
     expect(parseInlineEnv('FOO=')).toEqual(['FOO', '']);
   });
 
-  test('rejects pairs without =', () => {
-    expect(() => parseInlineEnv('FOO')).toThrow(EnvFileError);
+  test('key-only form returns undefined value for pass-through', () => {
+    expect(parseInlineEnv('FOO')).toEqual(['FOO', undefined]);
+    expect(parseInlineEnv('  CI  ')).toEqual(['CI', undefined]);
   });
 
   test('rejects pairs with no key', () => {
     expect(() => parseInlineEnv('=bar')).toThrow(EnvFileError);
+    expect(() => parseInlineEnv('')).toThrow(EnvFileError);
   });
 
   test('rejects invalid var names', () => {
     expect(() => parseInlineEnv('1FOO=bar')).toThrow(EnvFileError);
     expect(() => parseInlineEnv('FOO-BAR=baz')).toThrow(EnvFileError);
+    expect(() => parseInlineEnv('1FOO')).toThrow(EnvFileError);
   });
 });
 

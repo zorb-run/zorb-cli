@@ -25,10 +25,27 @@ export function parseEnvFile(path: string, opts: ParseEnvFileOptions = {}): Reco
   return parseEnvText(text, resolved);
 }
 
-export function parseInlineEnv(pair: string): [key: string, value: string] {
+/**
+ * Parses a `-e/--env` argument. Accepts `KEY=VALUE` and `KEY` (key-only),
+ * where the latter signals pass-through from the current process env — the
+ * caller resolves the value from `process.env[key]`.
+ */
+export function parseInlineEnv(pair: string): [key: string, value: string | undefined] {
   const eq = pair.indexOf('=');
+
+  if (eq === -1) {
+    const key = pair.trim();
+    if (key === '') {
+      throw new EnvFileError(`invalid env value (expected KEY or KEY=VALUE): ${pair}`, '<argv>');
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new EnvFileError(`invalid env var name '${key}'`, '<argv>');
+    }
+    return [key, undefined];
+  }
+
   if (eq < 1) {
-    throw new EnvFileError(`invalid env value (expected KEY=VALUE): ${pair}`, '<argv>');
+    throw new EnvFileError(`invalid env value (expected KEY or KEY=VALUE): ${pair}`, '<argv>');
   }
   const key = pair.slice(0, eq).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {

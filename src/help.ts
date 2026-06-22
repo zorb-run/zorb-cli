@@ -14,8 +14,9 @@ Global options:
   -f, --file <path>  Use a different workflow file
       --env-file <path>
                      Load env vars from a file before running
-  -e, --env KEY=VALUE
-                     Set an env var inline (repeatable, overrides --env-file)
+  -e, --env KEY[=VALUE]
+                     Set an env var inline; bare KEY passes the current process
+                     value through (repeatable, overrides --env-file)
   -v, --verbose      Verbose output
       --debug        Debug output
       --quiet        Suppress non-error output
@@ -43,16 +44,19 @@ Usage:
   zorb run <task> [options]
 
 Options:
-      --with <key=value>     Pass inputs to the task (repeatable)
+      --with <key=value>...  Pass inputs to the task (space-separated pairs)
       --watch <glob>         Re-run the task when files matching the glob change
   -f, --file <path>          Use a different workflow file
       --env-file <path>      Load env vars from a file before running
-  -e, --env KEY=VALUE        Set an env var inline (repeatable)
+  -e, --env KEY[=VALUE]      Set an env var inline; bare KEY passes the current
+                             process value through (repeatable)
 
 Examples:
   zorb run build
-  zorb run deploy --with environment=staging --with dry-run=true
+  zorb run deploy --with environment=staging
+  zorb run deploy --with environment=production dry-run=true
   zorb run test -e CI=true -e LOG_LEVEL=debug
+  zorb run test -e CI -e GITHUB_TOKEN  # pass-through from process env
   zorb run test --watch 'src/**/*.{ts,tsx}'`;
 
 const HELP_USE = `zorb use — run an action directly, no zorb.yml needed
@@ -61,13 +65,15 @@ Usage:
   zorb use <action> [options]
 
 Options:
-      --with <key=value>     Pass inputs to the action (repeatable)
+      --with <key=value>...  Pass inputs to the action (space-separated pairs)
   -f, --file <path>          Use zorb.yml's env/defaults from a different file
       --env-file <path>      Load env vars from a file before running
-  -e, --env KEY=VALUE        Set an env var inline (repeatable)
+  -e, --env KEY[=VALUE]      Set an env var inline; bare KEY passes the current
+                             process value through (repeatable)
 
 Examples:
   zorb use ./check.action --with verbose=true
+  zorb use ./scripts/version.action --with path=./package.json mode=patch
   zorb use @zorb/aws/s3/sync --with bucket=my-bucket -e AWS_REGION=eu-west-1`;
 
 const HELP_HELP = `zorb help — show help for a command
@@ -88,7 +94,8 @@ Usage:
 Options:
   -f, --file <path>      Use a different workflow file
       --env-file <path>  Load env vars from a file before running
-  -e, --env KEY=VALUE    Set an env var inline (repeatable)
+  -e, --env KEY[=VALUE]  Set an env var inline; bare KEY passes through from
+                         the current process (repeatable)
 
 Prints each task with its description and any required inputs.`;
 

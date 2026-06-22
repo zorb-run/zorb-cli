@@ -47,16 +47,16 @@ bun run build -- --current
 
 ## Common commands
 
-| Command                             | What it does                                                                        |
-| ----------------------------------- | ----------------------------------------------------------------------------------- |
-| `bun run test:unit`                 | Unit + spawned-CLI + binary-smoke tests via `bun test`                              |
-| `bun run test:integration`          | Run the `integration-tests/` shell suite against `dist/<host>/zorb` (build first)   |
-| `bun run typecheck`                 | Type-check with `tsc --noEmit`                                                      |
-| `bun run format`                    | Format with Prettier                                                                |
-| `bun run dev`                       | Run the CLI from source                                                             |
-| `bun run build`                     | Build compiled binaries for all four supported platforms into `dist/`               |
-| `bun run build -- --current`        | Build only the host-platform binary (used by smoke tests)                           |
-| `bun run build -- --target=<p>`     | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
+| Command                         | What it does                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| `bun run test:unit`             | Unit + spawned-CLI + binary-smoke tests via `bun test`                              |
+| `bun run test:integration`      | Run the `integration-tests/` shell suite against `dist/<host>/zorb` (build first)   |
+| `bun run typecheck`             | Type-check with `tsc --noEmit`                                                      |
+| `bun run format`                | Format with Prettier                                                                |
+| `bun run dev`                   | Run the CLI from source                                                             |
+| `bun run build`                 | Build compiled binaries for all four supported platforms into `dist/`               |
+| `bun run build -- --current`    | Build only the host-platform binary (used by smoke tests)                           |
+| `bun run build -- --target=<p>` | Build a specific platform: `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64` |
 
 ## Binary distribution
 

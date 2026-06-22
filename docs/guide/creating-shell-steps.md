@@ -120,9 +120,28 @@ tasks:
         run: echo "Deploying $TARGET in $MODE mode"
 ```
 
-The env layers from low to high precedence: process env → `defaults.run.env` → workflow `env:` → task `env:` → step
-`env:`. Shell steps inherit the developer's `process.env` by default (unlike action steps, which get a minimal
-environment).
+The env layers from low to high precedence: CLI `--env-file` / `-e` → `defaults.run.env` → workflow `env:` → task
+`env:` → step `env:`. Shell steps run with the same strict, declaration-only environment as actions — see
+[Environment isolation](#environment-isolation) below.
+
+::: warning Environment isolation
+Step subprocesses (shell, docker, and action) **never inherit `process.env`**. The only env vars that reach a step are
+those declared in `env:` blocks or passed via `--env-file` / `-e/--env`. This is deliberate: it stops malicious or
+careless workflow code from scraping your shell — `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, `SSH_AUTH_SOCK`, browser
+session cookies, etc. — by reading `process.env`.
+
+If your step needs something from the calling shell (a credential, `PATH` for an unusual install of `bun`, etc.),
+opt in explicitly:
+
+```sh
+# Pass the current values of CI and GITHUB_TOKEN through to the step
+zorb run release -e CI -e GITHUB_TOKEN
+```
+
+`-e KEY` (no value) takes whatever the variable is currently set to in your shell. If it isn't set, the flag is
+silently skipped. Alternatively, declare values in the workflow's `env:` blocks. Either way, the dependency becomes
+visible at the call site or in the file rather than lurking implicitly.
+:::
 
 ::: tip
 Map step outputs the same way. `${{ steps.<id>.outputs.<key> }}` is valid in `env:` but never in `run:` — declare an env

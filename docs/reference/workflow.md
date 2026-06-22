@@ -86,8 +86,8 @@ zorb run build --with target=staging
 
 ## Inputs
 
-Inputs are typed task parameters passed in via repeated `--with key=value` flags on the CLI. They mirror GitHub Actions'
-`inputs:` shape.
+Inputs are typed task parameters passed in via a single `--with key=value [key=value...]` flag on the CLI (one
+`--with`, one or more space-separated pairs). They mirror GitHub Actions' `inputs:` shape.
 
 ```yml
 tasks:
@@ -253,11 +253,20 @@ Duplicate step IDs within the same task are a validation error.
 
 ## Env
 
-Three scopes contribute environment variables, with precedence (highest wins):
+::: warning Strict, declaration-only environment
+Step subprocesses — shell, docker, **and** action — never inherit `process.env` from the `zorb` process. The only env
+vars that reach a step are those declared in workflow / task / step `env:` blocks, or supplied via `--env-file` /
+`-e/--env` on the CLI. This is deliberate: it prevents a workflow (or an action a workflow consumes) from scraping
+secrets out of the developer's shell. Anything a step depends on must be visible in the workflow or at the call site.
+:::
+
+Layers, lowest to highest precedence:
 
 ```
-step env  >  task env  >  workflow env  >  defaults.run.env  >  process env
+inline CLI env  <  defaults.run.env  <  workflow env  <  task env  <  step env
 ```
+
+(`defaults.run.env` applies to `run:` steps only; action steps skip it.)
 
 Workflow-level `env:` is visible inside task-level `env:` expressions (via `env.<name>`), so you can compose values:
 
@@ -271,13 +280,13 @@ tasks:
       HEALTH_URL: ${{ env.BASE_URL }}/health
 ```
 
-Action steps do **not** receive the full process environment — only what's declared in `env:` (at any scope) or supplied
-inline via `-e KEY=VALUE` or `--env-file`. Shell steps pass `process.env` through intentionally.
-
-CLI flags layered on top:
+CLI flags feed into the inline layer:
 
 - `--env-file <path>` — load variables from a `.env`-formatted file.
 - `-e KEY=VALUE` / `--env KEY=VALUE` — set inline; repeatable; overrides `--env-file`.
+- `-e KEY` (no value) — explicit pass-through: copy `process.env[KEY]` into the inline layer. If `KEY` isn't set in
+  the calling environment, the flag is silently skipped. This is the supported way to forward a credential like
+  `GITHUB_TOKEN` from your shell into a step.
 
 ## Defaults
 

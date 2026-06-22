@@ -13,7 +13,8 @@ core.
 ## Dev loop
 
 - Run the CLI directly: `bun src/cli.ts <args>` — there's no built binary yet.
-- Tests: `bun run test:unit` (unit + subprocess + binary smoke) and `bun run test:integration` (shell scripts driving the compiled binary).
+- Tests: `bun run test:unit` (unit + subprocess + binary smoke) and `bun run test:integration` (shell scripts driving
+  the compiled binary).
 - Typecheck: `bun run typecheck`.
 - Format: `bun run format`.
 
@@ -91,14 +92,17 @@ Routing: `info` → stdout (program output). Everything else → stderr (diagnos
 
 Three input paths for environment variables:
 
-- `--env-file <path>` — load from a dotenv-style file (no override of existing process.env).
+- `--env-file <path>` — load from a dotenv-style file (no override of existing process.env in the CLI itself).
 - `-e KEY=VALUE` / `--env KEY=VALUE` — inline, repeatable, **overrides** earlier values (including `--env-file`).
+  `-e KEY` (no value) is an explicit pass-through: copies `process.env[KEY]` into the inline layer; silently skipped if
+  `KEY` is unset.
 - Workflow `env:` blocks (workflow / task / step) — declarative, scope-driven.
 
-**Future principle (A8 runners):** action subprocesses do NOT inherit the full process env. The runner builds a minimal
-env from `env:` declarations and inline `-e` values only, so workflows can't accidentally depend on whatever the
-developer's shell happened to export. Shell `run:` steps already pass through process.env intentionally; actions should
-not.
+**Strict step environment.** Shell, docker, and action steps all start from `envBase = inlineEnv` only — `process.env`
+is never inherited. The build of `envBase` lives in `src/commands/run.ts`; the rationale is to stop a workflow (or an
+action it consumes) from scraping credentials out of the developer's shell. If a step needs something, the workflow
+declares it or the caller passes `-e KEY`. Don't reintroduce a `procEnv` layer or a shell-only escape hatch — they were
+removed deliberately.
 
 ## Pitfalls discovered
 

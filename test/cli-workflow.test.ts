@@ -195,7 +195,7 @@ describe('-e / --env inline env vars', () => {
   });
 
   test('malformed pair errors with usage hint', async () => {
-    const { exitCode, stderr } = await runCli(['list', '-e', 'BAD']);
+    const { exitCode, stderr } = await runCli(['list', '-e', '=val']);
     expect(exitCode).toBe(1);
     expect(stderr).toContain('invalid env value');
   });
