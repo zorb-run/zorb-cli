@@ -70,15 +70,30 @@ function multiString(value: unknown): string[] {
 }
 
 /**
+ * Rejects `--flag=value` and `-x=value` spellings before any other parsing.
+ * The CLI accepts only the space-separated form (`--flag value` / `-x value`)
+ * for consistency — one spelling per flag, no exceptions. `--with=...` is the
+ * one that prompted this; it was the most ambiguous (multi-value), but the
+ * rule applies uniformly so users never have to remember which flags honour
+ * the equals form.
+ */
+function rejectEqualsForms(raw: string[]): void {
+  for (const arg of raw) {
+    if (!arg.startsWith('-') || arg === '-' || arg === '--') continue;
+    const eq = arg.indexOf('=');
+    if (eq === -1) continue;
+    const flag = arg.slice(0, eq);
+    throw new InputError(`${flag} does not accept '=' — use '${flag} <value>' instead`);
+  }
+}
+
+/**
  * Pulls `--with` out of the raw argv before minimist sees it. `--with` takes
  * one or more space-separated `key=value` tokens after the flag (e.g.
  * `--with env=prod dry-run=true`) and is not repeatable. The first following
  * token is consumed unconditionally so a missing `=` still surfaces the
  * existing "invalid --with" error; subsequent tokens are consumed only while
  * they look like pairs, so they don't accidentally swallow positional args.
- *
- * `--with=<pair>` is explicitly rejected — it makes the multi-pair behaviour
- * ambiguous (does `--with=a=1 b=2` consume `b=2`?) so we force the one form.
  */
 function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: string[] } {
   const withPairs: string[] = [];
@@ -87,10 +102,6 @@ function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: strin
 
   for (let i = 0; i < raw.length; i++) {
     const arg = raw[i]!;
-
-    if (arg.startsWith('--with=')) {
-      throw new InputError(`--with does not accept '=' — use '--with key=value [key=value...]' instead`);
-    }
 
     if (arg === '--with') {
       if (seen) throw new InputError(`--with is not repeatable; pass multiple values as 'key=value key=value'`);
@@ -115,6 +126,7 @@ function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: strin
 }
 
 function parseArgs(raw: string[]): ParsedArgs {
+  rejectEqualsForms(raw);
   const { withPairs, remaining } = extractWithArgs(raw);
 
   const argv = minimist(remaining, {

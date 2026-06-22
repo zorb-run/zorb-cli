@@ -194,8 +194,22 @@ describe('zorb run', () => {
       const { exitCode, stderr } = await runCli(['run', 'deploy', '--with=environment=staging'], { cwd: dir });
       expect(exitCode).toBe(1);
       expect(stderr).toContain(`--with does not accept '='`);
+      expect(stderr).toContain(`--with <value>`);
     } finally {
       cleanup();
+    }
+  });
+
+  test('rejects equals form on other flags too (--file=, --env-file=, -e=)', async () => {
+    for (const args of [
+      ['run', 'deploy', '--file=zorb.yml'],
+      ['run', 'deploy', '--env-file=.env'],
+      ['run', 'deploy', '-e=FOO=bar'],
+      ['run', 'deploy', '--watch=*.ts'],
+    ]) {
+      const { exitCode, stderr } = await runCli(args);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`does not accept '='`);
     }
   });
 
