@@ -1,7 +1,8 @@
 # Troubleshooting
 
 The gotchas that bite first, with the fix for each. If something here doesn't match what you're seeing,
-[open an issue](https://github.com/zorb-run/zorb-cli/issues) — the cookbook in this list is short by design.
+[open an issue](https://github.com/zorb-run/zorb-cli/issues) — this list is short by design and we'd rather grow it
+from real reports than guess.
 
 ## My env var isn't visible inside the step
 

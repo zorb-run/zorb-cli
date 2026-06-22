@@ -106,8 +106,10 @@ Pairs are typed against the task's declared inputs:
 - `number` accepts any value parseable as a float.
 - `string` is unchanged.
 
-Passing a key that isn't declared in the task's `inputs:` prints a warning and is then ignored. Passing one `--with`
-flag twice is an error — bundle all pairs after a single `--with`.
+Passing a key that isn't declared in the task's `inputs:` prints a warning, then passes the raw string through as
+`${{ inputs.<key> }}`. So a typo doesn't silently disappear — you see the warning, and any expression that referenced
+the misspelled key still resolves to the value you supplied. Passing one `--with` flag twice is an error — bundle all
+pairs after a single `--with`.
 
 ### `--watch`
 

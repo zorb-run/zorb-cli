@@ -191,9 +191,11 @@ Write the action's logical name without a runtime extension; zorb detects the ru
   matches (e.g. a stale `greet.action.js` next to a freshly authored `greet.action.ts`), zorb still picks the first
   but prints a warning naming the alternatives so the ambiguity is visible. Delete or rename one of the files to clear
   it.
-- `uses: @scope/package/path` — resolved via `node_modules` relative to the workflow. The package is expected to expose
-  a file at the requested subpath; e.g. `@zorb/aws/s3/sync` looks for
-  `node_modules/@zorb/aws/s3/sync.{ts,mjs,cjs,js,py}`.
+- `uses: @scope/package/path` — resolved via Node-style `require.resolve` from the workflow's directory. The package's
+  own `exports` / `main` / `files` decide which file the subpath maps to; zorb does **not** probe runtime extensions
+  for NPM actions. The package is responsible for exposing the subpath you reference — e.g. `@zorb/aws/s3/sync` must
+  resolve to a real file inside `node_modules/@zorb/aws/`. Once resolved, zorb picks the runtime from the file's
+  extension on disk.
 
 Writing the runtime extension into `uses:` directly — `./scripts/greet.action.ts` — is an error, with a hint pointing
 at the suffix to drop. The source of truth for "which runtime?" lives on disk, so renaming `.js` → `.ts` doesn't ripple

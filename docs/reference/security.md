@@ -142,17 +142,27 @@ declares the mount.
 
 ## Strict workflow validation
 
-The parser runs before any step does. It rejects:
+Two layers of validation catch structural mistakes before they do damage.
+
+**Parse-time checks** — run once when the workflow loads, before any step executes:
 
 - Unknown top-level / task / step / input keys (with a "did you mean" hint for typos).
 - Wrong types (`steps: 'oops'` when a sequence was expected).
 - Duplicate step IDs within a task.
 - A step with both `run:` and `uses:`.
+
+A workflow that mis-spells `secret_keys` as `secret-keys` is caught at parse time, not when a secret is later missing
+from the table.
+
+**Resolution-time checks** — run when a `uses:` step is about to execute, which can be after earlier steps have
+already done work:
+
 - `uses:` values with a runtime extension (`./scripts/x.action.ts`) — drops the source-of-truth ambiguity.
 - Cycles in cross-file workflow refs.
 
-A workflow that mis-spells `secret_keys` as `secret-keys` is caught at validation time, not when a secret is later
-missing from the table.
+These don't fire at parse time because they need the filesystem state at the point of invocation, not just the
+workflow shape. The protection still holds — the offending step never runs — but the earlier steps in the task will
+already have completed by the time the error surfaces.
 
 ## `uses:` resolution is explicit
 
