@@ -11,11 +11,11 @@ to the workflow, and how to test an action locally.
 An action is a function called `action` that takes two arguments — `inputs` and `context` — and returns an object.
 
 ```js
-// scripts/greet.action.cjs
-module.exports.action = (inputs, context) => {
+// scripts/greet.action.mjs
+export function action(inputs, context) {
   context.log.info(`Hello, ${inputs.name}!`);
   return { greeted: inputs.name };
-};
+}
 ```
 
 ```yml
