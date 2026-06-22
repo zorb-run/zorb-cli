@@ -6,7 +6,7 @@ step outputs. Drop-in for any task that needs the project's own version.
 ## The action
 
 ```ts
-// scripts/version.action.ts
+// scripts/version.action
 import { readFileSync } from 'node:fs';
 
 type Inputs = {

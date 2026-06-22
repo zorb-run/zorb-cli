@@ -68,7 +68,7 @@ tasks:
 The action:
 
 ```ts
-// scripts/version.action.ts
+// scripts/version.action
 import { readFileSync } from 'node:fs';
 
 export function action(inputs: { path?: string }, context: { log: { info(m: string): void } }) {
