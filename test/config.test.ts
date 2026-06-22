@@ -446,6 +446,44 @@ describe('findWorkflowFile', () => {
       cleanup();
     }
   });
+
+  test('finds zorb.yaml when only zorb.yaml exists', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  b:\n    steps:\n      - run: x');
+      expect(findWorkflowFile({ cwd: dir })).toBe(join(dir, 'zorb.yaml'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('prefers zorb.yml and warns when both extensions exist in the same dir', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), 'tasks:\n  b:\n    steps:\n      - run: x');
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  b:\n    steps:\n      - run: x');
+      const warnings: string[] = [];
+      const found = findWorkflowFile({ cwd: dir, onWarning: (m) => warnings.push(m) });
+      expect(found).toBe(join(dir, 'zorb.yml'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('multiple workflow files');
+      expect(warnings[0]).toContain('zorb.yaml');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('walks up to find zorb.yaml in a parent', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      const deep = join(dir, 'a/b/c');
+      mkdirSync(deep, { recursive: true });
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  b:\n    steps:\n      - run: x');
+      expect(findWorkflowFile({ cwd: deep })).toBe(join(dir, 'zorb.yaml'));
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe('loadWorkflow', () => {
@@ -472,7 +510,20 @@ describe('loadWorkflow', () => {
     try {
       const e = expectError(() => loadWorkflow({ cwd: dir }));
       expect(e.message).toContain("couldn't find zorb.yml");
+      expect(e.message).toContain('zorb.yaml');
       expect(e.hint).toBeDefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('auto-discovers zorb.yaml when only zorb.yaml exists', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  build:\n    steps:\n      - run: hi');
+      const { workflow, path } = loadWorkflow({ cwd: dir });
+      expect(path).toBe(join(dir, 'zorb.yaml'));
+      expect(Object.keys(workflow.tasks)).toEqual(['build']);
     } finally {
       cleanup();
     }

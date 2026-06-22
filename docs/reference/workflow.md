@@ -26,8 +26,10 @@ The schema header at the top is optional but recommended — it gives editors li
 
 ## File discovery
 
-`zorb` searches for `zorb.yml` starting in the current directory and walking up to each parent (the same way `git` finds
-`.git`). The first match wins and becomes the workflow's working directory for relative paths.
+`zorb` searches for `zorb.yml` (or `zorb.yaml`) starting in the current directory and walking up to each parent (the
+same way `git` finds `.git`). The first match wins and becomes the workflow's working directory for relative paths.
+Both extensions are accepted equally; if both files exist in the same directory, `zorb.yml` is used and a warning names
+the duplicate so the ambiguity is visible.
 
 Override the search with `--file`:
 
@@ -218,8 +220,9 @@ documented in [Writing actions](../guide/actions.md).
 `uses:` resolves in this order:
 
 1. **Workflow task reference** — if the basename starts with `zorb.` (e.g. `./zorb.build`, `./other/zorb.deploy`), it
-   resolves to a task in the indicated `zorb.yml`. Cross-file references work the same as in-file ones, except the
-   referenced task only sees the inputs supplied via `with:`. Cycles are detected and error.
+   resolves to a task in the indicated workflow file. Both `zorb.yml` and `zorb.yaml` are accepted; if both exist in
+   the target directory, `zorb.yml` is used and a warning names the duplicate. Cross-file references work the same as
+   in-file ones, except the referenced task only sees the inputs supplied via `with:`. Cycles are detected and error.
 2. **Local file** — `./path/to/file.action` resolves to the file with one of the supported extensions, tried in order:
    `.ts`, `.mjs`, `.cjs`, `.js`, `.py`. The `uses:` value itself must not include the runtime extension — write
    `./path/to/file.action`, not `./path/to/file.action.ts`; zorb detects the runtime from the file on disk. If more

@@ -26,7 +26,7 @@ These flags work with every command. They can appear before or after the subcomm
 
 | Flag                                | Description                                                                            |
 | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `-f`, `--file <path>`               | Use a workflow file other than the discovered `zorb.yml`.                              |
+| `-f`, `--file <path>`               | Use a workflow file other than the discovered `zorb.yml` / `zorb.yaml`.                |
 | `--env-file <path>`                 | Load env vars from a `.env`-formatted file before running.                             |
 | `-e`, `--env KEY[=VALUE]`           | Set an env var inline. Repeatable. Bare `-e KEY` forwards the calling shell's value.   |
 | `-v`, `--verbose`                   | Print additional progress detail to stderr.                                            |

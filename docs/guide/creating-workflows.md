@@ -30,9 +30,10 @@ The schema header is optional but recommended — editors like VS Code use it fo
 
 ## Where the file lives
 
-zorb finds `zorb.yml` by searching the current directory and walking up to each parent, the same way `git` finds `.git`.
-The first match wins and becomes the workflow's "working directory" — every relative `cwd:`, file `uses:`, and
-`--env-file` is resolved against it.
+zorb finds `zorb.yml` (or `zorb.yaml`) by searching the current directory and walking up to each parent, the same way
+`git` finds `.git`. The first match wins and becomes the workflow's "working directory" — every relative `cwd:`, file
+`uses:`, and `--env-file` is resolved against it. If both `zorb.yml` and `zorb.yaml` exist in the same directory,
+`zorb.yml` wins and a warning names the duplicate.
 
 To use a workflow somewhere else without `cd`-ing, pass `--file`:
 
