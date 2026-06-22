@@ -63,7 +63,7 @@ export async function runRun({
   inlineEnv = {},
   shutdownSignal,
 }: RunOptions): Promise<number> {
-  const { workflow, path } = loadWorkflow({ file, cwd });
+  const { workflow, path } = loadWorkflow({ file, cwd, onWarning: (msg) => log.warn(msg) });
 
   const task = workflow.tasks[taskName];
   if (!task) {

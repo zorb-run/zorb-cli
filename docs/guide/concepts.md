@@ -29,7 +29,8 @@ A workflow can have many tasks; a task can have many steps; a step is exactly on
 When you run `zorb run <task>`, zorb:
 
 1. **Discovers `zorb.yml`** — searches the current directory and walks up, the same way `git` finds `.git`. The first
-   match wins and becomes the workflow's working directory.
+   match wins and becomes the workflow's working directory. `zorb.yaml` is accepted alongside `zorb.yml`; if both
+   exist in the same directory, `zorb.yml` is used and a warning names the duplicate.
 2. **Parses and validates** — strictly. Unknown keys, wrong types, duplicate step IDs all error before any step runs.
 3. **Resolves inputs** — types `--with` pairs against the task's declared `inputs:` and applies defaults for the rest.
 4. **Loads secrets** — runs any pre-task `secrets:` actions to populate the run-scoped secret table.

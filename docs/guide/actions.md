@@ -11,11 +11,11 @@ to the workflow, and how to test an action locally.
 An action is a function called `action` that takes two arguments — `inputs` and `context` — and returns an object.
 
 ```js
-// scripts/greet.action.cjs
-module.exports.action = (inputs, context) => {
+// scripts/greet.action
+export function action(inputs, context) {
   context.log.info(`Hello, ${inputs.name}!`);
   return { greeted: inputs.name };
-};
+}
 ```
 
 ```yml
@@ -69,7 +69,7 @@ Async actions are supported in JavaScript/TypeScript (return a `Promise`). Pytho
 ### JavaScript / TypeScript
 
 ```ts
-// scripts/version.action.ts
+// scripts/version.action
 import { readFileSync } from 'node:fs';
 
 export function action(inputs: { path?: string }, context: Context) {
@@ -95,7 +95,7 @@ name is the default `action`.
 ### Python
 
 ```py
-# scripts/version.action.py
+# scripts/version.action
 import json
 
 def action(inputs, context):

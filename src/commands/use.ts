@@ -74,7 +74,7 @@ export async function runUse({
       throw e;
     }
   } else {
-    const found = findWorkflowFile({ cwd: baseCwd });
+    const found = findWorkflowFile({ cwd: baseCwd, onWarning: (msg) => log.warn(msg) });
     if (found) {
       try {
         const loaded = loadWorkflow({ file: found });

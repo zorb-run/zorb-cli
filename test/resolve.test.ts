@@ -284,6 +284,55 @@ describe('resolveUses — cross-file workflow refs', () => {
       expect((e as ResolveError).message).toContain('invalid task name');
     }
   });
+
+  test('picks zorb.yaml when only zorb.yaml exists on disk', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  build:\n    steps:\n      - run: x');
+      const r = resolveUses({ uses: './zorb.build', fromFile: join(dir, 'zorb.yml') });
+      expect(r.kind).toBe('workflow');
+      if (r.kind !== 'workflow') throw new Error('expected workflow');
+      expect(r.workflowPath).toBe(join(dir, 'zorb.yaml'));
+      expect(r.taskName).toBe('build');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('prefers zorb.yml and warns when both extensions exist', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), 'tasks:\n  build:\n    steps:\n      - run: x');
+      writeFileSync(join(dir, 'zorb.yaml'), 'tasks:\n  build:\n    steps:\n      - run: x');
+      const warnings: string[] = [];
+      const r = resolveUses({
+        uses: './zorb.build',
+        fromFile: join(dir, 'zorb.yml'),
+        onWarning: (m) => warnings.push(m),
+      });
+      expect(r.kind).toBe('workflow');
+      if (r.kind !== 'workflow') throw new Error('expected workflow');
+      expect(r.workflowPath).toBe(join(dir, 'zorb.yml'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('matches multiple files');
+      expect(warnings[0]).toContain('zorb.yaml');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('falls back to zorb.yml path when neither extension exists', () => {
+    const { dir, cleanup } = tmp();
+    try {
+      // Neither file written — loader will produce the not-found error.
+      const r = resolveUses({ uses: './zorb.build', fromFile: join(dir, 'zorb.yml') });
+      expect(r.kind).toBe('workflow');
+      if (r.kind !== 'workflow') throw new Error('expected workflow');
+      expect(r.workflowPath).toBe(join(dir, 'zorb.yml'));
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe('resolveUses — errors', () => {

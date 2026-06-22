@@ -10,7 +10,7 @@ export interface ListOptions extends LoadOptions {
 }
 
 export function runList({ log, colors, file, cwd }: ListOptions): number {
-  const { workflow, path } = loadWorkflow({ file, cwd });
+  const { workflow, path } = loadWorkflow({ file, cwd, onWarning: (msg) => log.warn(msg) });
 
   const taskNames = Object.keys(workflow.tasks);
   log.info(colors.dim(relative(cwd ?? process.cwd(), path)));

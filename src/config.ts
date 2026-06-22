@@ -57,13 +57,28 @@ export class WorkflowError extends Error {
 
 export interface FindOptions {
   cwd?: string;
+  /** Called for non-fatal diagnostics (e.g. both zorb.yml and zorb.yaml in the same dir). */
+  onWarning?: (message: string) => void;
 }
+
+export const WORKFLOW_FILENAMES: readonly string[] = ['zorb.yml', 'zorb.yaml'];
 
 export function findWorkflowFile(opts: FindOptions = {}): string | undefined {
   let dir = resolve(opts.cwd ?? process.cwd());
   while (true) {
-    const candidate = join(dir, 'zorb.yml');
-    if (existsSync(candidate)) return candidate;
+    const matches: string[] = [];
+    for (const name of WORKFLOW_FILENAMES) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) matches.push(candidate);
+    }
+    if (matches.length > 0) {
+      const chosen = matches[0]!;
+      if (matches.length > 1 && opts.onWarning) {
+        const others = matches.slice(1).join(', ');
+        opts.onWarning(`multiple workflow files in ${dir} — using ${chosen} (also found: ${others})`);
+      }
+      return chosen;
+    }
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
@@ -73,6 +88,8 @@ export function findWorkflowFile(opts: FindOptions = {}): string | undefined {
 export interface LoadOptions {
   file?: string;
   cwd?: string;
+  /** Forwarded to findWorkflowFile when auto-discovering. */
+  onWarning?: (message: string) => void;
 }
 
 export interface LoadedWorkflow {
@@ -90,10 +107,10 @@ export function loadWorkflow(opts: LoadOptions = {}): LoadedWorkflow {
       throw new WorkflowError(`workflow file not found: ${opts.file}`, filePath);
     }
   } else {
-    const found = findWorkflowFile({ cwd });
+    const found = findWorkflowFile({ cwd, onWarning: opts.onWarning });
     if (!found) {
       throw new WorkflowError(
-        `couldn't find zorb.yml in ${cwd} or any parent directory`,
+        `couldn't find zorb.yml or zorb.yaml in ${cwd} or any parent directory`,
         '',
         undefined,
         undefined,

@@ -66,7 +66,7 @@ export function resolveUses({ uses, fromFile, onWarning }: ResolveOptions): Reso
   const firstDot = base.indexOf('.');
   const stem = firstDot === -1 ? base : base.slice(0, firstDot);
   if (stem === 'zorb') {
-    return resolveWorkflowRef(uses, fromFile, base, firstDot);
+    return resolveWorkflowRef(uses, fromFile, base, firstDot, onWarning);
   }
 
   const baseDir = dirname(fromFile);
@@ -99,9 +99,20 @@ export function resolveUses({ uses, fromFile, onWarning }: ResolveOptions): Reso
   return { kind: 'action', path: chosen.path, language: languageFor(chosen.ext) };
 }
 
-// Parse `./[dir/]zorb.<taskname>` into a workflow ref. The runner loads the
-// target zorb.yml — we don't open it here.
-function resolveWorkflowRef(uses: string, fromFile: string, base: string, firstDot: number): ResolvedWorkflow {
+export const WORKFLOW_EXTENSIONS: readonly string[] = ['.yml', '.yaml'];
+
+// Parse `./[dir/]zorb.<taskname>` into a workflow ref. We pick the workflow
+// file on disk so cross-file calls don't have to guess at the callee's
+// extension; both zorb.yml and zorb.yaml are accepted, .yml wins when both
+// exist (with a warning), and the resolver falls back to zorb.yml when neither
+// exists so the loader emits a clean not-found error.
+function resolveWorkflowRef(
+  uses: string,
+  fromFile: string,
+  base: string,
+  firstDot: number,
+  onWarning: ((message: string) => void) | undefined,
+): ResolvedWorkflow {
   const taskName = firstDot === -1 ? '' : base.slice(firstDot + 1);
   if (taskName.length === 0) {
     throw new ResolveError(
@@ -118,8 +129,27 @@ function resolveWorkflowRef(uses: string, fromFile: string, base: string, firstD
   const baseDir = dirname(fromFile);
   const usesDir = dirname(uses);
   const targetDir = resolvePath(baseDir, usesDir);
-  const workflowPath = join(targetDir, 'zorb.yml');
+  const workflowPath = pickWorkflowFile(targetDir, uses, onWarning);
   return { kind: 'workflow', workflowPath, taskName };
+}
+
+function pickWorkflowFile(
+  dir: string,
+  uses: string,
+  onWarning: ((message: string) => void) | undefined,
+): string {
+  const matches: string[] = [];
+  for (const ext of WORKFLOW_EXTENSIONS) {
+    const candidate = join(dir, `zorb${ext}`);
+    if (existsAsFile(candidate)) matches.push(candidate);
+  }
+  if (matches.length === 0) return join(dir, 'zorb.yml');
+  const chosen = matches[0]!;
+  if (matches.length > 1 && onWarning) {
+    const others = matches.slice(1).join(', ');
+    onWarning(`workflow reference '${uses}' matches multiple files — using ${chosen} (also found: ${others})`);
+  }
+  return chosen;
 }
 
 interface NpmSpec {
