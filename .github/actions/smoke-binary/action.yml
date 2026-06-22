@@ -1,9 +1,8 @@
 name: Smoke compiled binary
 description: >-
-  Packages a built zorb binary into the same tarball layout the release
-  workflow ships (zorb-<target>/bin/zorb + zorb-<target>/runners/),
-  extracts it, runs --version, and executes a tiny code-action workflow
-  to verify runner discovery from the extracted layout.
+  Packages a built zorb binary into the same tarball layout the release workflow ships (zorb-<target>/bin/zorb +
+  zorb-<target>/runners/), extracts it, runs --version, and executes a tiny code-action workflow to verify runner
+  discovery from the extracted layout.
 
 inputs:
   dist-dir:

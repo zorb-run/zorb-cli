@@ -403,19 +403,20 @@ tasks:
     }
   });
 
-  test('shell steps still see process.env (unchanged)', async () => {
+  test('shell steps are also sandboxed from process.env', async () => {
     const { dir, cleanup } = tmp();
     try {
       writeFileSync(
         join(dir, 'zorb.yml'),
-        `tasks:\n  t:\n    steps:\n      - run: echo "shell-sees=$ZORB_SHELL_TEST"\n`,
+        `tasks:\n  t:\n    steps:\n      - run: 'echo "shell-sees=[$ZORB_SHELL_TEST]"'\n`,
       );
       const { exitCode, stdout } = await runCli(['run', 't'], {
         cwd: dir,
-        env: { ZORB_SHELL_TEST: 'visible' },
+        env: { ZORB_SHELL_TEST: 'should-not-leak' },
       });
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('shell-sees=visible');
+      expect(stdout).toContain('shell-sees=[]');
+      expect(stdout).not.toContain('should-not-leak');
     } finally {
       cleanup();
     }

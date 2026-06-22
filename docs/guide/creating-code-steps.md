@@ -204,10 +204,11 @@ While iterating, `zorb use` runs an action directly without needing a `zorb.yml`
 
 ```sh
 zorb use ./scripts/version.action --with path=./package.json
-zorb use '@zorb/aws/s3/sync' --with bucket=staging --with source=./dist
+zorb use '@zorb/aws/s3/sync' --with bucket=staging source=./dist
 ```
 
-`zorb use` accepts the same `--with key=value` flags as `zorb run` and prints the action's outputs on completion. It's
+`zorb use` accepts the same `--with key=value` syntax as `zorb run` (one `--with`, space-separated pairs) and prints
+the action's outputs on completion. It's
 the fastest way to verify an action does what you expect before you wire it into a task.
 
 ## Code step or shell step?

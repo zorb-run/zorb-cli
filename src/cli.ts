@@ -69,10 +69,57 @@ function multiString(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Pulls `--with` out of the raw argv before minimist sees it. `--with` is not
+ * repeatable: it takes one or more space-separated `key=value` tokens after
+ * the flag (e.g. `--with env=prod dry-run=true`). The first following token
+ * is consumed unconditionally so a missing `=` still surfaces the existing
+ * "invalid --with" error; subsequent tokens are consumed only while they look
+ * like pairs, so they don't accidentally swallow positional args.
+ */
+function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: string[] } {
+  const withPairs: string[] = [];
+  const remaining: string[] = [];
+  let seen = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const arg = raw[i]!;
+
+    if (arg.startsWith('--with=')) {
+      if (seen) throw new InputError(`--with is not repeatable; pass multiple values as 'key=value key=value'`);
+      seen = true;
+      withPairs.push(arg.slice('--with='.length));
+      continue;
+    }
+
+    if (arg === '--with') {
+      if (seen) throw new InputError(`--with is not repeatable; pass multiple values as 'key=value key=value'`);
+      seen = true;
+      let consumed = 0;
+      while (i + 1 < raw.length) {
+        const next = raw[i + 1]!;
+        if (next.startsWith('-')) break;
+        if (consumed > 0 && !next.includes('=')) break;
+        withPairs.push(next);
+        consumed++;
+        i++;
+      }
+      if (consumed === 0) throw new InputError(`--with requires at least one key=value pair`);
+      continue;
+    }
+
+    remaining.push(arg);
+  }
+
+  return { withPairs, remaining };
+}
+
 function parseArgs(raw: string[]): ParsedArgs {
-  const argv = minimist(raw, {
+  const { withPairs, remaining } = extractWithArgs(raw);
+
+  const argv = minimist(remaining, {
     boolean: ['help', 'version', 'verbose', 'debug', 'quiet'],
-    string: ['file', 'env-file', 'env', 'with', 'watch'],
+    string: ['file', 'env-file', 'env', 'watch'],
     alias: { h: 'help', v: 'verbose', f: 'file', e: 'env' },
   });
 
@@ -91,7 +138,7 @@ function parseArgs(raw: string[]): ParsedArgs {
     file: typeof argv.file === 'string' ? argv.file : undefined,
     envFile: typeof argv['env-file'] === 'string' ? argv['env-file'] : undefined,
     env: multiString(argv['env']),
-    with: multiString(argv['with']),
+    with: withPairs,
     watch: typeof argv.watch === 'string' ? argv.watch : undefined,
   };
 }
@@ -104,7 +151,20 @@ function pickLogLevel(args: ParsedArgs): LogLevel {
 }
 
 export async function main(rawArgs: string[]): Promise<number> {
-  const args = parseArgs(rawArgs);
+  const noColorEarly = rawArgs.includes('--no-color');
+  const earlyColors = createColors(shouldColor({ noColorFlag: noColorEarly }));
+
+  let args: ParsedArgs;
+  try {
+    args = parseArgs(rawArgs);
+  } catch (e) {
+    if (e instanceof InputError) {
+      const log = createLogger('normal', earlyColors);
+      log.error(e.message);
+      return 1;
+    }
+    throw e;
+  }
   const colors = createColors(shouldColor({ noColorFlag: args.noColor }));
   const log = createLogger(pickLogLevel(args), colors);
 
@@ -125,9 +185,10 @@ export async function main(rawArgs: string[]): Promise<number> {
     command === 'init' ||
     (args.help && (command === 'run' || command === 'use' || command === 'list'));
 
-  // Inline env vars (--env-file then -e/--env) are kept separate from
-  // process.env so actions can be given a strict, declaration-only environment
-  // (see A8 runner principle). Shell steps merge process.env with this map.
+  // Inline env vars (--env-file then -e/--env). This is the only channel by
+  // which the developer's shell exports can reach a step — process.env is
+  // never inherited by any step (shell, docker, or action). Use `-e KEY` for
+  // explicit pass-through.
   const inlineEnv: Record<string, string> = Object.create(null);
 
   if (!wantsHelpOnly && args.envFile) {
@@ -145,7 +206,17 @@ export async function main(rawArgs: string[]): Promise<number> {
       let count = 0;
       for (const pair of args.env) {
         const [key, value] = parseInlineEnv(pair);
-        inlineEnv[key] = value; // -e overrides --env-file
+        if (value === undefined) {
+          // Pass-through form: `-e KEY` takes the value from process.env.
+          const passed = process.env[key];
+          if (passed === undefined) {
+            log.verbose(`-e ${key}: not set in environment, skipping`);
+            continue;
+          }
+          inlineEnv[key] = passed;
+        } else {
+          inlineEnv[key] = value; // -e overrides --env-file
+        }
         count++;
       }
       log.verbose(`set ${count} inline env var(s)`);

@@ -168,15 +168,19 @@ throw.
 
 ## Environment
 
-Actions inherit a _minimal_ environment, not the full developer shell. The env each action sees comes from:
+Actions — and shell and docker steps too — inherit a _minimal_ environment, not the full developer shell. The env
+each step sees comes from:
 
 - The workflow / task / step `env:` blocks visible to the step.
 - Anything previously registered via `context.setEnv`.
-- `-e KEY=VALUE` and `--env-file` flags supplied to the `zorb run` invocation.
+- `-e KEY[=VALUE]` and `--env-file` flags supplied to the `zorb run` invocation. Use `-e KEY` (no value) to forward
+  a value from your current shell.
 
-That intentionally excludes the wide world of shell-exported variables your terminal happens to have. If your action
-needs something, the workflow has to declare it. (Shell `run:` steps still see `process.env` — only actions are
-sandboxed this way.)
+That intentionally excludes the wide world of shell-exported variables your terminal happens to have. If a step
+needs something — including `PATH`-resident binaries an unusual install requires, or a credential like
+`GITHUB_TOKEN` — the workflow has to declare it or the caller has to pass it explicitly. This sandboxing applies to
+shell, docker, and action steps alike, so an untrusted action can't read `process.env.AWS_SECRET_ACCESS_KEY` or
+similar.
 
 ## Local actions vs. NPM actions
 

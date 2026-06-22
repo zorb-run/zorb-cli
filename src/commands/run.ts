@@ -39,12 +39,10 @@ export interface RunOptions extends LoadOptions {
   taskName: string;
   withPairs: string[];
   /**
-   * Env vars collected from --env-file and -e/--env. Kept separate from
-   * process.env so action subprocesses can be given a declaration-only
-   * environment (no leak of the developer's shell exports). -e overrides
-   * --env-file (the cli.ts layer handles that). Shell steps merge this with
-   * process.env; actions see only this map plus workflow/task/step env: and
-   * dynamic env from setEnv.
+   * Env vars collected from --env-file and -e/--env. -e overrides --env-file
+   * (the cli.ts layer handles that). This is the ONLY way the developer's
+   * shell exports reach a step subprocess — `process.env` is not inherited
+   * by either shell or action steps. Use `-e KEY` for explicit pass-through.
    */
   inlineEnv?: Record<string, string>;
   /**
@@ -93,14 +91,11 @@ export async function runRun({
 
   const runCtx = new RunContext();
 
-  const procEnv: Record<string, string> = Object.create(null);
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) procEnv[k] = v;
-  }
-  // Shell env base = process.env + inline (-e / --env-file).
-  // Action env base = inline only (no process.env — strict declarations-only).
-  const shellEnvBase: Record<string, string> = Object.assign(Object.create(null), procEnv, inlineEnv);
-  const actionEnvBase: Record<string, string> = Object.assign(Object.create(null), inlineEnv);
+  // Strict env base — applies to shell, docker, AND action steps. Only the
+  // CLI's inline env (--env-file + -e/--env, including `-e KEY` pass-through)
+  // crosses into the step subprocess. process.env is never inherited; the
+  // workflow author has to declare anything the step needs.
+  const envBase: Record<string, string> = Object.assign(Object.create(null), inlineEnv);
 
   // Secrets block — actions only, executed before task steps. taskName is
   // already resolved so loaders can use it in log messages. Cross-file refs
@@ -125,8 +120,7 @@ export async function runRun({
             task: undefined,
             inputs,
             runCtx,
-            actionEnvBase,
-            shellEnvBase,
+            envBase,
             workflowPath: path,
             taskName,
             log,
@@ -152,8 +146,7 @@ export async function runRun({
     taskName,
     task,
     inputs,
-    shellEnvBase,
-    actionEnvBase,
+    envBase,
     runCtx,
     cycleStack: [`${path}::${taskName}`],
     shutdownSignal,
@@ -168,8 +161,7 @@ interface TaskRunArgs {
   taskName: string;
   task: Task;
   inputs: Record<string, WithValue>;
-  shellEnvBase: Record<string, string>;
-  actionEnvBase: Record<string, string>;
+  envBase: Record<string, string>;
   runCtx: RunContext;
   /** Ancestor task chain: `${absoluteWorkflowPath}::${taskName}` entries. */
   cycleStack: string[];
@@ -177,20 +169,8 @@ interface TaskRunArgs {
 }
 
 async function runTask(args: TaskRunArgs): Promise<number> {
-  const {
-    log,
-    colors,
-    workflow,
-    workflowPath,
-    taskName,
-    task,
-    inputs,
-    shellEnvBase,
-    actionEnvBase,
-    runCtx,
-    cycleStack,
-    shutdownSignal,
-  } = args;
+  const { log, colors, workflow, workflowPath, taskName, task, inputs, envBase, runCtx, cycleStack, shutdownSignal } =
+    args;
 
   const defaultCwd = dirname(workflowPath);
   const secretsSnap = () => runCtx.getSecretsSnapshot();
@@ -217,8 +197,7 @@ async function runTask(args: TaskRunArgs): Promise<number> {
             task,
             inputs,
             runCtx,
-            actionEnvBase,
-            shellEnvBase,
+            envBase,
             workflowPath,
             taskName,
             log,
@@ -235,10 +214,10 @@ async function runTask(args: TaskRunArgs): Promise<number> {
       continue;
     }
 
-    // Shell or Docker step. Docker steps use actionEnvBase (no process.env leak
-    // into the container); shell steps inherit process.env via shellEnvBase.
+    // Shell or Docker step. Both start from the strict envBase — no
+    // process.env inheritance, declared/inline env only.
     const usesDocker = step.docker !== undefined;
-    const acc: Record<string, string> = Object.assign(Object.create(null), usesDocker ? actionEnvBase : shellEnvBase);
+    const acc: Record<string, string> = Object.assign(Object.create(null), envBase);
     const layer = (m: EnvMap | undefined) => {
       if (!m) return;
       Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap(), steps: stepsSnap() }));
@@ -453,8 +432,7 @@ interface RunActionArgs {
   task: Task | undefined;
   inputs: Record<string, WithValue>;
   runCtx: RunContext;
-  actionEnvBase: Record<string, string>;
-  shellEnvBase: Record<string, string>;
+  envBase: Record<string, string>;
   workflowPath: string;
   taskName: string;
   log: Logger;
@@ -470,8 +448,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
     task,
     inputs,
     runCtx,
-    actionEnvBase,
-    shellEnvBase,
+    envBase,
     workflowPath,
     taskName,
     log,
@@ -495,11 +472,11 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
   const secretsSnap = runCtx.getSecretsSnapshot();
   const stepsSnap = runCtx.getStepsSnapshot();
 
-  // Action env stack: actionEnvBase → workflow.env → task.env → dynamic → step.env.
-  // Notably absent: process.env (the user's shell exports do not leak into actions)
-  // and defaults.run.env (those are the floor for `run:` steps, not for actions).
-  // This is also the "effective env" we inherit into a cross-file callee.
-  const acc: Record<string, string> = Object.assign(Object.create(null), actionEnvBase);
+  // Action env stack: envBase → workflow.env → task.env → dynamic → step.env.
+  // Notably absent: process.env (the user's shell exports never leak into a
+  // step) and defaults.run.env (a `run:`-only floor). This is also the
+  // "effective env" we inherit into a cross-file callee.
+  const acc: Record<string, string> = Object.assign(Object.create(null), envBase);
   const layer = (m: EnvMap | undefined) => {
     if (!m) return;
     Object.assign(acc, interpolateMap(m, { inputs, env: { ...acc }, secrets: secretsSnap, steps: stepsSnap }));
@@ -522,7 +499,7 @@ async function runActionOrWorkflowStep(args: RunActionArgs): Promise<number> {
       withMap,
       callerEffectiveEnv: effectiveEnv,
       runCtx,
-      shellEnvBase,
+      envBase,
       log,
       colors,
       cycleStack,
@@ -613,7 +590,7 @@ interface WorkflowRefArgs {
   withMap: WithMap;
   callerEffectiveEnv: Record<string, string>;
   runCtx: RunContext;
-  shellEnvBase: Record<string, string>;
+  envBase: Record<string, string>;
   log: Logger;
   colors: Colors;
   cycleStack: string[];
@@ -621,7 +598,7 @@ interface WorkflowRefArgs {
 }
 
 async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
-  const { resolved, withMap, callerEffectiveEnv, runCtx, shellEnvBase, log, colors, cycleStack, shutdownSignal } = args;
+  const { resolved, withMap, callerEffectiveEnv, runCtx, envBase, log, colors, cycleStack, shutdownSignal } = args;
   const { workflowPath: calleeWfPath, taskName: calleeTaskName } = resolved;
 
   const cycleKey = `${calleeWfPath}::${calleeTaskName}`;
@@ -674,16 +651,11 @@ async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
     throw e;
   }
 
-  // Caller's effective env (workflow + task + step) becomes the ambient base
-  // for the callee. The callee then layers its OWN workflow/task/step env on
-  // top inside runTask. The callee uses its own defaults — caller's
+  // Caller's effective env (workflow + task + step) merges into the callee's
+  // base, so the callee inherits values the caller has already resolved. The
+  // callee then layers its OWN workflow/task/step env on top inside runTask.
   // defaults.run.env is excluded (action steps don't see it anyway).
-  const calleeActionEnvBase: Record<string, string> = Object.assign(Object.create(null), callerEffectiveEnv);
-  const calleeShellEnvBase: Record<string, string> = Object.assign(
-    Object.create(null),
-    shellEnvBase,
-    callerEffectiveEnv,
-  );
+  const calleeEnvBase: Record<string, string> = Object.assign(Object.create(null), envBase, callerEffectiveEnv);
 
   log.info(colors.gray(`  ↳ ${calleeTaskName} (${calleePath})`));
 
@@ -695,8 +667,7 @@ async function runWorkflowRefStep(args: WorkflowRefArgs): Promise<number> {
     taskName: calleeTaskName,
     task: calleeTask,
     inputs: calleeInputs,
-    shellEnvBase: calleeShellEnvBase,
-    actionEnvBase: calleeActionEnvBase,
+    envBase: calleeEnvBase,
     runCtx,
     cycleStack: [...cycleStack, cycleKey],
     shutdownSignal,

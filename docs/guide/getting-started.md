@@ -120,11 +120,12 @@ tasks:
 
 ```sh
 zorb run deploy --with environment=staging
-zorb run deploy --with environment=production --with dry-run=true
+zorb run deploy --with environment=production dry-run=true
 ```
 
-`--with` is repeatable. `boolean` inputs accept `true/false`, `yes/no`, and `1/0`. See
-[Workflow format → Inputs](../reference/workflow.md#inputs) for the full surface.
+`--with` takes one or more space-separated `key=value` pairs and is not repeatable. `boolean` inputs accept
+`true/false`, `yes/no`, and `1/0`. See [Workflow format → Inputs](../reference/workflow.md#inputs) for the full
+surface.
 
 ::: tip
 `${{ }}` expressions work in `env:` and `with:`, never in `run:`. Map a value to an env var, then read it natively in
@@ -158,9 +159,17 @@ The CLI can supplement env from outside the file:
 ```sh
 zorb run build --env-file .env.local
 zorb run build -e CI=true -e LOG_LEVEL=debug
+zorb run build -e CI -e GITHUB_TOKEN     # pass-through from the current shell
 ```
 
-`-e` flags override `--env-file`, which in turn overrides workflow `env:`.
+`-e KEY` (no value) takes whatever the variable is currently set to in the shell that invoked `zorb`; if it isn't set,
+the flag is a silent no-op. Inline `-e` overrides values from `--env-file`, which in turn sit below workflow `env:`.
+
+::: warning Steps don't inherit `process.env`
+Shell, docker, and action steps all run with a strict, declaration-only environment — `process.env` is **never**
+forwarded automatically. If a step needs a value from your shell, declare it in `env:` or pass it with `-e KEY`. See
+[Workflow format → Env](../reference/workflow.md#env) for the full rules.
+:::
 
 ## Compose tasks with `uses:`
 
