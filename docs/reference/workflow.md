@@ -210,8 +210,8 @@ work.
 | `with` | mapping | Key-value inputs passed to the action. Values support `${{ }}` expressions. Reserved keys (matching declared inputs) are type-checked.        |
 | `bin`  | string  | Override the runtime launch template for this step. `{0}` is substituted with the runner script path. Defaults to `bun {0}` or `python3 {0}`. |
 
-Actions live in `./runners/`, are invoked as a subprocess, and exchange JSON over temporary files. The contract for
-action authors is documented in [Writing actions](../guide/actions.md).
+Actions are invoked as a subprocess and exchange JSON over temporary files. The contract for action authors is
+documented in [Writing actions](../guide/actions.md).
 
 ### Resolution
 
