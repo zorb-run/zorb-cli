@@ -70,12 +70,15 @@ function multiString(value: unknown): string[] {
 }
 
 /**
- * Pulls `--with` out of the raw argv before minimist sees it. `--with` is not
- * repeatable: it takes one or more space-separated `key=value` tokens after
- * the flag (e.g. `--with env=prod dry-run=true`). The first following token
- * is consumed unconditionally so a missing `=` still surfaces the existing
- * "invalid --with" error; subsequent tokens are consumed only while they look
- * like pairs, so they don't accidentally swallow positional args.
+ * Pulls `--with` out of the raw argv before minimist sees it. `--with` takes
+ * one or more space-separated `key=value` tokens after the flag (e.g.
+ * `--with env=prod dry-run=true`) and is not repeatable. The first following
+ * token is consumed unconditionally so a missing `=` still surfaces the
+ * existing "invalid --with" error; subsequent tokens are consumed only while
+ * they look like pairs, so they don't accidentally swallow positional args.
+ *
+ * `--with=<pair>` is explicitly rejected — it makes the multi-pair behaviour
+ * ambiguous (does `--with=a=1 b=2` consume `b=2`?) so we force the one form.
  */
 function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: string[] } {
   const withPairs: string[] = [];
@@ -86,10 +89,7 @@ function extractWithArgs(raw: string[]): { withPairs: string[]; remaining: strin
     const arg = raw[i]!;
 
     if (arg.startsWith('--with=')) {
-      if (seen) throw new InputError(`--with is not repeatable; pass multiple values as 'key=value key=value'`);
-      seen = true;
-      withPairs.push(arg.slice('--with='.length));
-      continue;
+      throw new InputError(`--with does not accept '=' — use '--with key=value [key=value...]' instead`);
     }
 
     if (arg === '--with') {

@@ -187,6 +187,18 @@ describe('zorb run', () => {
     }
   });
 
+  test('rejects --with=<pair> equals form', async () => {
+    const { dir, cleanup } = tmp();
+    try {
+      writeFileSync(join(dir, 'zorb.yml'), WORKFLOW);
+      const { exitCode, stderr } = await runCli(['run', 'deploy', '--with=environment=staging'], { cwd: dir });
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`--with does not accept '='`);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('applies defaults at --verbose level', async () => {
     const { dir, cleanup } = tmp();
     try {
