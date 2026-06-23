@@ -23,6 +23,16 @@ jobs:
       # bun target that breaks. Smoke tests above already exercised the
       # host-platform binary end-to-end.
       - run: bun run build
+      # Preview the published NPM tarball — same layout `npm publish` would
+      # ship. Prints every packed file with its size, and uploads the .tgz as
+      # a workflow artifact so reviewers can download and inspect.
+      # `--ignore-scripts` skips re-running the `prepack` build above.
+      - name: Preview NPM tarball
+        run: bun pm pack --ignore-scripts --destination artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: artifacts/zorb-*.tgz
       # End-to-end smoke against the release tarball layout — same action the
       # release workflow uses to gate uploads.
       - uses: ./.github/actions/smoke-binary
