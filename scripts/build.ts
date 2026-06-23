@@ -59,6 +59,18 @@ interface BuildOptions {
   gitHash: string;
 }
 
+async function emitPublicModule(repoRoot: string): Promise<void> {
+  process.stderr.write(`> emitting dist/action.{js,d.ts}\n`);
+  const result = Bun.spawnSync(['bunx', 'tsc', '-p', 'tsconfig.public.json'], {
+    cwd: repoRoot,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`tsc -p tsconfig.public.json failed (exit ${result.exitCode})`);
+  }
+}
+
 export async function build(opts: BuildOptions): Promise<void> {
   const entry = join(opts.repoRoot, 'src', 'cli.ts');
   const runnersSrc = join(opts.repoRoot, 'runners');
@@ -137,5 +149,6 @@ if (import.meta.main) {
   const gitHash = readGitHash(repoRoot);
 
   await build({ repoRoot, outDir, targets, gitHash });
+  await emitPublicModule(repoRoot);
   process.stderr.write(`> built ${targets.length} target(s) → ${outDir}\n`);
 }
