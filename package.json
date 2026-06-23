@@ -7,9 +7,18 @@
   "bin": {
     "zorb": "./bin/zorb.cjs"
   },
+  "exports": {
+    "./action": {
+      "types": "./dist/action.d.ts",
+      "import": "./dist/action.js",
+      "default": "./dist/action.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "dev": "bun src/cli.ts",
-    "build": "bun scripts/build.ts",
+    "build": "bun scripts/build.ts && bun run build:public",
+    "build:public": "tsc -p tsconfig.public.json",
     "prepack": "bun run build",
     "test:unit": "bun test",
     "test:integration": "./integration-tests/run.sh",
