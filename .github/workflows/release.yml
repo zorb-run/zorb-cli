@@ -9,8 +9,11 @@ on:
     types: [published]
 
 # `gh release upload` needs write access to the release.
+# `id-token: write` is required for the OIDC token used by npm Trusted
+# Publishers + provenance attestations.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build-and-upload:
@@ -64,3 +67,15 @@ jobs:
             artifacts/SHA256SUMS \
             --clobber \
             --repo "${{ github.repository }}"
+
+      # Publish the NPM package. The repo is registered as a Trusted Publisher
+      # on npmjs.com, so npm exchanges the GitHub OIDC token (granted by the
+      # `id-token: write` permission above) for publish rights — no NPM_TOKEN
+      # required. `--provenance` attaches the verifiable build attestation;
+      # `--ignore-scripts` skips re-running `prepack` (we already built above).
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+      - name: Publish to NPM
+        run: npm publish --provenance --access public --ignore-scripts
