@@ -19,13 +19,12 @@ describe('public types', () => {
     expect(ctx.taskName).toBe('t');
   });
 
-  test('ActionOutput admits primitives, arrays, records, and their promises', () => {
-    const s: ActionOutput = 'str';
-    const n: ActionOutput = 1;
-    const b: ActionOutput = true;
-    const arr: ActionOutput = ['a', 1, false];
-    const rec: ActionOutput = { k: 'v', n: 2, ok: true };
-    const p: ActionOutput = Promise.resolve({ k: 'v' });
-    expect([s, n, b, arr, rec, p]).toHaveLength(6);
+  test('ActionOutput admits records, nested values, void, and their promises', () => {
+    const rec: ActionOutput = { k: 'v', n: 2, ok: true, nothing: null };
+    const nested: ActionOutput = { tags: ['a', 'b'], meta: { v: 1, deep: { ok: true } } };
+    const v: ActionOutput = undefined;
+    const pRec: ActionOutput = Promise.resolve({ k: 'v' });
+    const pVoid: ActionOutput = Promise.resolve();
+    expect([rec, nested, v, pRec, pVoid]).toHaveLength(5);
   });
 });

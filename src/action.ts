@@ -15,9 +15,9 @@ type ActionOutputValue =
   | boolean
   | null
   | ActionOutputValue[]
-  | Record<string, ActionOutputValue>;
+  | { [key: string]: ActionOutputValue };
 
-type ActionOutputs = Record<string, ActionOutputValue>;
+type ActionOutputs = { [key: string]: ActionOutputValue };
 
 /** Expected action result (only object outputs are persisted by the runner). */
 export type ActionOutput = ActionOutputs | Promise<ActionOutputs> | void | Promise<void>;
