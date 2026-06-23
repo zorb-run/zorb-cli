@@ -9,14 +9,18 @@
 /** Raw `with:` payload passed to an action function. Always `unknown` — validate before use. */
 export type ActionInput = unknown;
 
-type ActionOutputItem =
+type ActionOutputValue =
   | string
   | number
   | boolean
-  | (string | number | boolean)[]
-  | Record<string, string | number | boolean>;
-/** Expected action result */
-export type ActionOutput = ActionOutputItem | Promise<ActionOutputItem>;
+  | null
+  | ActionOutputValue[]
+  | Record<string, ActionOutputValue>;
+
+type ActionOutputs = Record<string, ActionOutputValue>;
+
+/** Expected action result (only object outputs are persisted by the runner). */
+export type ActionOutput = ActionOutputs | Promise<ActionOutputs> | void | Promise<void>;
 
 /** Second argument to an action function. Shape matches the JS/TS runner contract. */
 export interface ActionContext {
