@@ -4,6 +4,13 @@
   "version": "0.0.5",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zorb-run/zorb-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zorb-run/zorb-cli/issues"
+  },
   "bin": {
     "zorb": "./bin/zorb.cjs"
   },
