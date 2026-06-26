@@ -38,6 +38,13 @@ test/
 zorb.schema.json    # vendored at repo root, served via raw.githubusercontent.com
 runners/            # (future) runner.cjs + runner.py for code actions
 dist/               # (future) bundled binary output
+docs/               # VitePress site published to docs.zorb.run
+  .vitepress/       # VitePress config (nav, sidebar, markdown tweaks)
+  guide/            # narrative docs — getting started, concepts, how-tos
+  cookbook/         # task-shaped recipes
+  reference/        # workflow format, expressions, CLI, security model
+  public/           # static assets (CNAME, favicon)
+  index.md          # landing page
 ```
 
 ## Conventions
@@ -70,6 +77,27 @@ Levels:
 | `debug`   | `--debug`          | + `debug`                       |
 
 Routing: `info` → stdout (program output). Everything else → stderr (diagnostics, hints, errors).
+
+## Docs site (`docs/`)
+
+`docs/` is a VitePress site that builds to `docs.zorb.run`. GitHub Pages serves it; `docs/public/CNAME` pins the
+custom domain. Deploys are driven by `.github/workflows/docs.yml` on push to `main` when `docs/**`, the workflow
+itself, `package.json`, or `bun.lock` change.
+
+- Dev: `bun run docs:dev` (local hot-reload), `bun run docs:build`, `bun run docs:preview`.
+- Nav and sidebar live in `docs/.vitepress/config.ts`. When you add a page under `guide/`, `cookbook/`, or
+  `reference/`, wire it into the matching sidebar section there — pages don't show up otherwise.
+- Three top-level sections:
+  - `guide/` — narrative, read top-to-bottom. New conceptual material goes here.
+  - `cookbook/` — task-shaped recipes ("how do I X?"). Short, copy-pasteable.
+  - `reference/` — exhaustive specs (workflow format, expressions, CLI flags, security model). Authoritative for
+    behaviour; keep in sync with the code.
+- **Expression syntax gotcha.** zorb's `${{ ... }}` collides with Vue's `{{ }}` interpolation inside inline code
+  spans. The `markdown.config` hook in `.vitepress/config.ts` adds `v-pre` to any inline `<code>` containing `{{`.
+  Don't remove it — fenced code blocks are fine, but bare inline backticks with `{{` will break the build without it.
+- Edit links point at `main`; the footer is MIT. Search is local (no Algolia key needed).
+- Out of scope for the docs site: API reference generation, versioned docs, i18n. Keep it a single-version static
+  site for now.
 
 ## YAML / workflow validation
 
