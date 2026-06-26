@@ -64,7 +64,7 @@ test/               # unit + spawned-CLI + binary-smoke tests
 integration-tests/  # shell-script end-to-end suite (see below)
 runners/            # runner.cjs (Node) + runner.py (Python) for code actions
 scripts/            # build.ts, validate-schema.ts
-docs/               # VitePress site (zorb.run)
+docs/               # VitePress site (docs.zorb.run)
 examples/           # example zorb.yml files referenced from the docs
 zorb.schema.json    # JSON Schema for editor support (not runtime-consumed)
 bin/zorb.cjs        # NPM-installed dispatcher; execs dist/<host>/zorb at runtime

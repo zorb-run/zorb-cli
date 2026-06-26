@@ -38,12 +38,12 @@ tasks:
 ```
 
 ```sh
-zorb list                                  # list every task
-zorb run build                             # run a task
-zorb run deploy --with environment=staging # pass inputs
-zorb run build --watch                     # re-run on file changes
-zorb init                                  # scaffold a zorb.yml
-zorb --help                                # everything else
+zorb list                                   # list every task
+zorb run build                              # run a task
+zorb run deploy --with environment=staging  # pass inputs
+zorb run build --watch                      # re-run on file changes
+zorb init                                   # scaffold a zorb.yml
+zorb --help                                 # everything else
 ```
 
 ## Features
@@ -55,7 +55,8 @@ zorb --help                                # everything else
 - **Composition over orchestration.** Call other tasks (`uses: ./zorb.<task>`) including across files. No DAG, no
   `needs:`, no parallel-step config — keep workflows readable.
 - **Strict environment.** Steps don't inherit your shell's environment by default. Workflows declare what they need.
-- **Native binaries.** Distributed via NPM with a tiny Node shim (`bin/zorb.cjs`) that dispatches to the right `dist/<platform>/zorb` binary.
+- **Native binaries.** Distributed via NPM with a tiny Node shim (`bin/zorb.cjs`) that dispatches to the right
+  `dist/<platform>/zorb` binary.
 
 ## Install
 
@@ -73,14 +74,14 @@ Homebrew distribution is on the roadmap.
 
 Full guide, CLI reference, workflow reference, cookbook, and CI integration notes:
 
-→ **<https://zorb.run>**
+→ **<https://docs.zorb.run>**
 
 Quick links:
 
-- [Getting started](https://zorb.run/guide/getting-started)
-- [Workflow reference](https://zorb.run/reference/workflow)
-- [CLI reference](https://zorb.run/reference/cli)
-- [Cookbook](https://zorb.run/cookbook/)
+- [Getting started](https://docs.zorb.run/guide/getting-started)
+- [Workflow reference](https://docs.zorb.run/reference/workflow)
+- [CLI reference](https://docs.zorb.run/reference/cli)
+- [Cookbook](https://docs.zorb.run/cookbook/)
 
 ## Contributing
 
