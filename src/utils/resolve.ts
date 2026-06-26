@@ -133,11 +133,7 @@ function resolveWorkflowRef(
   return { kind: 'workflow', workflowPath, taskName };
 }
 
-function pickWorkflowFile(
-  dir: string,
-  uses: string,
-  onWarning: ((message: string) => void) | undefined,
-): string {
+function pickWorkflowFile(dir: string, uses: string, onWarning: ((message: string) => void) | undefined): string {
   const matches: string[] = [];
   for (const ext of WORKFLOW_EXTENSIONS) {
     const candidate = join(dir, `zorb${ext}`);

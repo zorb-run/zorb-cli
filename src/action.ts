@@ -9,13 +9,7 @@
 /** Raw `with:` payload passed to an action function. Always `unknown` — validate before use. */
 export type ActionInput = unknown;
 
-type ActionOutputValue =
-  | string
-  | number
-  | boolean
-  | null
-  | ActionOutputValue[]
-  | { [key: string]: ActionOutputValue };
+type ActionOutputValue = string | number | boolean | null | ActionOutputValue[] | { [key: string]: ActionOutputValue };
 
 type ActionOutputs = { [key: string]: ActionOutputValue };
 
