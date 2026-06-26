@@ -1,5 +1,11 @@
 # zorb
 
+## 0.1.2
+
+### Patch Changes
+
+- c011782: Fix documentation for NPM
+
 ## 0.1.1
 
 ### Patch Changes
