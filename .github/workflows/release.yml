@@ -51,6 +51,8 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: bun install --frozen-lockfile
+      - run: bun run build
+      - uses: ./.github/actions/smoke-binary
 
       - uses: changesets/action@e0145edc7d9d8679003495b11f87bd8ef63c0cba # v1.5.3
         id: changesets
@@ -79,9 +81,6 @@ jobs:
           done
           cd artifacts
           sha256sum zorb-*.tar.gz > SHA256SUMS
-
-      - if: steps.changesets.outputs.published == 'true'
-        uses: ./.github/actions/smoke-binary
 
       - if: steps.changesets.outputs.published == 'true'
         name: Attach binaries to the GitHub Release
