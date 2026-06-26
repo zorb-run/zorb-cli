@@ -12,7 +12,7 @@
     "url": "https://github.com/zorb-run/zorb-cli/issues"
   },
   "bin": {
-    "zorb": "./bin/zorb.cjs"
+    "zorb": "bin/zorb.cjs"
   },
   "exports": {
     "./action": {
