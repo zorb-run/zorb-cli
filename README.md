@@ -55,7 +55,7 @@ zorb --help                                # everything else
 - **Composition over orchestration.** Call other tasks (`uses: ./zorb.<task>`) including across files. No DAG, no
   `needs:`, no parallel-step config — keep workflows readable.
 - **Strict environment.** Steps don't inherit your shell's environment by default. Workflows declare what they need.
-- **Single binary.** Distributed via NPM as a self-contained binary per platform — no Node version juggling.
+- **Native binaries.** Distributed via NPM with a tiny Node shim (`bin/zorb.cjs`) that dispatches to the right `dist/<platform>/zorb` binary.
 
 ## Install
 
