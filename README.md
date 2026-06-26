@@ -1,8 +1,17 @@
 # zorb
 
-Declarative local workflow runner. Define tasks in `zorb.yml`, run them with `zorb run <task>`.
+Declarative local workflow runner. Define your project's tasks once in `zorb.yml`, run them anywhere.
 
-> Early development — the CLI parses commands but doesn't execute tasks yet.
+[![NPM version](https://img.shields.io/npm/v/zorb.svg)](https://www.npmjs.com/package/zorb)
+[![License](https://img.shields.io/npm/l/zorb.svg)](./LICENSE)
+
+> Early development. The shape of the YAML and CLI may still shift before 1.0.
+
+## Why
+
+Most projects accumulate ad-hoc shell scripts, Makefiles, and `package.json` scripts that drift apart as the project
+grows. `zorb` replaces them with a single declarative file. Tasks, inputs, environment, and step composition all live in
+`zorb.yml` — and the same workflow runs locally and in CI.
 
 ## Example
 
@@ -12,9 +21,11 @@ tasks:
   build:
     description: Build the project
     steps:
-      - run: echo "Building..."
+      - run: bun install --frozen-lockfile
+      - run: bun run build
 
   deploy:
+    description: Deploy to a target environment
     inputs:
       environment:
         type: string
@@ -22,23 +33,59 @@ tasks:
     env:
       TARGET: ${{ inputs.environment }}
     steps:
-      - run: echo "Deploying to $TARGET"
+      - uses: ./zorb.build
+      - run: ./scripts/deploy.sh
 ```
 
 ```sh
-zorb run build
-zorb run deploy --with environment=staging
-zorb list
-zorb --help
+zorb list                                  # list every task
+zorb run build                             # run a task
+zorb run deploy --with environment=staging # pass inputs
+zorb run build --watch                     # re-run on file changes
+zorb init                                  # scaffold a zorb.yml
+zorb --help                                # everything else
 ```
+
+## Features
+
+- **Shell, Docker, and code actions.** Run shell commands directly, inside a Docker container, or invoke JavaScript,
+  TypeScript, or Python actions in the same workflow.
+- **Inputs, env, and expressions.** Borrows expression syntax (`${{ }}`), inputs, outputs, and secrets from GitHub
+  Actions — so it feels obvious from the first read.
+- **Composition over orchestration.** Call other tasks (`uses: ./zorb.<task>`) including across files. No DAG, no
+  `needs:`, no parallel-step config — keep workflows readable.
+- **Strict environment.** Steps don't inherit your shell's environment by default. Workflows declare what they need.
+- **Single binary.** Distributed via NPM as a self-contained binary per platform — no Node version juggling.
 
 ## Install
 
-Not yet published. See [CONTRIBUTING.md](./CONTRIBUTING.md) to run from source.
+```sh
+# via npm (recommended)
+npm install -g zorb
 
-## Links
+# or run without installing
+npx zorb --help
+```
 
-- Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
+Homebrew distribution is on the roadmap.
+
+## Documentation
+
+Full guide, CLI reference, workflow reference, cookbook, and CI integration notes:
+
+→ **<https://zorb.run>**
+
+Quick links:
+
+- [Getting started](https://zorb.run/guide/getting-started)
+- [Workflow reference](https://zorb.run/reference/workflow)
+- [CLI reference](https://zorb.run/reference/cli)
+- [Cookbook](https://zorb.run/cookbook/)
+
+## Contributing
+
+Bug reports, feature ideas, and PRs are all welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev loop, testing
+guide, and release process.
 
 ## License
 
