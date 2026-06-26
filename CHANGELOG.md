@@ -1,5 +1,11 @@
 # zorb
 
+## 0.1.1
+
+### Patch Changes
+
+- 4e1a7a1: Updated documentation for v0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
