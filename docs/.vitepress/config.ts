@@ -23,7 +23,6 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started', activeMatch: '/guide/' },
       { text: 'Cookbook', link: '/cookbook/', activeMatch: '/cookbook/' },
       { text: 'Reference', link: '/reference/workflow', activeMatch: '/reference/' },
-      { text: 'GitHub', link: 'https://github.com/zorb-run/zorb-cli' },
     ],
     sidebar: {
       '/guide/': [
@@ -68,7 +67,10 @@ export default defineConfig({
         },
       ],
     },
-    socialLinks: [{ icon: 'github', link: 'https://github.com/zorb-run/zorb-cli' }],
+    socialLinks: [
+      { icon: 'npm', link: 'https://www.npmjs.com/package/zorb' },
+      { icon: 'github', link: 'https://github.com/zorb-run/zorb-cli' },
+    ],
     editLink: {
       pattern: 'https://github.com/zorb-run/zorb-cli/edit/main/docs/:path',
       text: 'Edit this page on GitHub',
